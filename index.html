@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PENUMBRA — Escape Room de Terror</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Special+Elite&family=EB+Garamond:ital@0;1&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<!-- ===== Capas de ambiente (siempre visibles) ===== -->
+<div class="fx fx-vignette"></div>
+<div class="fx fx-grain"></div>
+<div class="fx fx-fog"></div>
+<div class="fx fx-scanline"></div>
+
+<!-- ===== Escena de fondo (imagen SVG) ===== -->
+<div class="backdrop" id="backdrop"></div>
+
+<main id="app">
+
+  <!-- ========================= MENÚ PRINCIPAL ========================= -->
+  <section class="screen active" id="screen-menu" data-title="Menú principal">
+    <div class="menu-wrap">
+      <h1 class="game-title" data-text="PENUMBRA">PENUMBRA</h1>
+      <p class="tagline">No apagues la linterna.</p>
+      <nav class="menu-nav">
+        <button class="btn btn-lg" data-action="go" data-target="screen-game">Jugar</button>
+        <button class="btn btn-lg" data-action="go" data-target="screen-multiplayer">Multijugador</button>
+        <button class="btn btn-lg" data-action="go" data-target="screen-scores">Puntajes</button>
+        <button class="btn btn-lg" data-action="go" data-target="screen-settings">Configuración</button>
+        <button class="btn btn-lg btn-ghost" data-action="quit">Salir</button>
+      </nav>
+      <footer class="menu-foot">
+        <span>Grupo 051 · Gráficas Computacionales en Web</span>
+        <span>2º avance — Ago–Dic 2026</span>
+      </footer>
+    </div>
+  </section>
+
+  <!-- ========================= MULTIJUGADOR ========================= -->
+  <section class="screen" id="screen-multiplayer" data-title="Multijugador">
+    <div class="panel">
+      <h2 class="screen-h">Multijugador</h2>
+      <p class="screen-sub">Un jugador escapa. El otro es el monstruo.</p>
+
+      <div class="mp-grid">
+        <div class="card">
+          <h3>Crear partida</h3>
+          <p class="muted">Comparte el código con tu compañero.</p>
+          <div class="code-box" id="mp-code">— — — —</div>
+          <button class="btn" data-action="generate-code">Crear sala</button>
+          <p class="micro" id="mp-host-status">Serás el <b>superviviente</b>.</p>
+        </div>
+
+        <div class="card">
+          <h3>Unirse a una partida</h3>
+          <p class="muted">Escribe el código de tu anfitrión.</p>
+          <input class="field" id="mp-join" type="text" maxlength="4" placeholder="Ej. 4KZ9" autocomplete="off" />
+          <button class="btn" data-action="join-game">Unirse</button>
+          <p class="micro" id="mp-join-status">Serás el <b>monstruo</b>.</p>
+        </div>
+      </div>
+
+      <div class="role-hint">
+        <span class="tag tag-survivor">Superviviente</span> resuelve puzzles y busca la salida ·
+        <span class="tag tag-monster">Monstruo</span> caza por sonido y visión
+      </div>
+
+      <button class="btn btn-back" data-action="back">Volver</button>
+    </div>
+  </section>
+
+  <!-- ========================= PUNTAJES ========================= -->
+  <section class="screen" id="screen-scores" data-title="Puntajes">
+    <div class="panel">
+      <h2 class="screen-h">Mejores escapes</h2>
+      <p class="screen-sub">Tiempos más rápidos para salir con vida.</p>
+
+      <table class="scores">
+        <thead>
+          <tr><th>#</th><th>Superviviente</th><th>Escenario</th><th>Dificultad</th><th>Tiempo</th></tr>
+        </thead>
+        <tbody id="scores-body"><!-- se llena desde JS --></tbody>
+      </table>
+
+      <div class="social">
+        <p class="muted">Inicia sesión para guardar tus tiempos en la tabla global:</p>
+        <div class="social-btns">
+          <button class="btn btn-social sb-fb" data-action="social" data-net="Facebook">Facebook</button>
+          <button class="btn btn-social sb-tw" data-action="social" data-net="Twitter">Twitter</button>
+          <button class="btn btn-social sb-ig" data-action="social" data-net="Instagram">Instagram</button>
+        </div>
+        <p class="micro" id="social-status">Sin sesión — los tiempos solo se guardan en este equipo.</p>
+      </div>
+
+      <button class="btn btn-back" data-action="back">Volver</button>
+    </div>
+  </section>
+
+  <!-- ========================= CONFIGURACIÓN ========================= -->
+  <section class="screen" id="screen-settings" data-title="Configuración">
+    <div class="panel">
+      <h2 class="screen-h">Configuración</h2>
+
+      <form class="settings-form" id="settings-form">
+        <label class="row">
+          <span>Volumen general</span>
+          <input type="range" name="volume" min="0" max="100" step="1" />
+          <output data-for="volume">70</output>
+        </label>
+
+        <label class="row">
+          <span>Música</span>
+          <input type="range" name="music" min="0" max="100" step="1" />
+          <output data-for="music">50</output>
+        </label>
+
+        <label class="row">
+          <span>Dificultad</span>
+          <select name="difficulty">
+            <option value="normal">Normal — con linterna</option>
+            <option value="dark">Oscuro — monstruo agresivo</option>
+            <option value="blackout">Apagón — sin linterna, puzzles duros</option>
+          </select>
+        </label>
+
+        <label class="row">
+          <span>Calidad gráfica</span>
+          <select name="quality">
+            <option value="low">Baja</option>
+            <option value="medium">Media</option>
+            <option value="high">Alta</option>
+          </select>
+        </label>
+
+        <label class="row">
+          <span>Sensibilidad del ratón</span>
+          <input type="range" name="sensitivity" min="1" max="20" step="1" />
+          <output data-for="sensitivity">8</output>
+        </label>
+
+        <div class="settings-actions">
+          <button type="button" class="btn" data-action="save-settings">Guardar</button>
+          <button type="button" class="btn btn-ghost" data-action="reset-settings">Restablecer</button>
+        </div>
+        <p class="micro" id="settings-status"></p>
+      </form>
+
+      <button class="btn btn-back" data-action="back">Volver</button>
+    </div>
+  </section>
+
+  <!-- ========================= PANTALLA DE JUEGO (maqueta HUD) ========================= -->
+  <section class="screen" id="screen-game" data-title="En juego">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- HUD -->
+    <div class="hud">
+      <div class="hud-top">
+        <div class="objective">
+          <span class="objective-label">Objetivo</span>
+          <span class="objective-text" id="objective-text">Encuentra la llave del sótano</span>
+        </div>
+        <div class="hud-meta">
+          <span class="tag tag-survivor" id="hud-role">Superviviente</span>
+          <span class="dot">·</span>
+          <span id="hud-scenario">Mansión Ravenwood</span>
+          <span class="dot">·</span>
+          <span id="hud-difficulty">Normal</span>
+          <span class="dot">·</span>
+          <span id="hud-net">Un jugador</span>
+        </div>
+      </div>
+
+      <div class="reticle"></div>
+      <div class="interact-prompt" id="interact-prompt"><kbd>E</kbd> Examinar cerradura</div>
+      <div class="hud-toast" id="hud-toast"></div>
+      <div class="hud-center-msg" id="hud-loading" hidden>Cargando modelos…</div>
+      <div class="hud-center-msg hud-lock" id="hud-lock" hidden>Haz clic para controlar con el ratón</div>
+
+      <div class="hud-bottom">
+        <div class="battery" id="battery">
+          <span class="battery-label">Linterna</span>
+          <div class="battery-bar"><i style="width:64%"></i></div>
+        </div>
+
+        <ul class="inventory" id="inventory">
+          <li class="slot filled" data-item="linterna" title="Linterna"></li>
+          <li class="slot filled" data-item="llave" title="Llave oxidada"></li>
+          <li class="slot" data-item="tarjeta" title="Tarjeta de acceso"></li>
+          <li class="slot" data-item="martillo" title="Martillo"></li>
+          <li class="slot" data-item="nota" title="Nota arrugada"></li>
+        </ul>
+
+        <div class="hud-hint">
+          <kbd>WASD</kbd> Moverse · <kbd>Shift</kbd> Correr · <kbd>Ratón</kbd> Mirar<br />
+          <kbd>F</kbd> <span id="hud-action">Linterna</span> · <kbd>ESC</kbd> Pausa
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ========================= OVERLAY: PAUSA ========================= -->
+<div class="overlay" id="overlay-pause" hidden>
+  <div class="overlay-card">
+    <h2>Pausa</h2>
+    <button class="btn btn-lg" data-action="resume">Continuar</button>
+    <button class="btn btn-lg" data-action="go" data-target="screen-settings" data-from-pause="1">Configuración</button>
+    <button class="btn btn-lg btn-ghost" data-action="exit-to-menu">Salir al menú</button>
+  </div>
+</div>
+
+<!-- ========================= OVERLAY: SALIR ========================= -->
+<div class="overlay" id="overlay-quit" hidden>
+  <div class="overlay-card">
+    <h2>¿Salir del juego?</h2>
+    <p class="muted">Cierra esta pestaña para terminar. Tus configuraciones ya están guardadas.</p>
+    <button class="btn btn-lg" data-action="cancel-quit">Seguir jugando</button>
+    <button class="btn btn-lg btn-ghost" data-action="confirm-quit">Salir</button>
+  </div>
+</div>
+
+<!-- Three.js local: "three" se resuelve a la copia vendorizada (funciona sin internet) -->
+<script type="importmap">
+{ "imports": { "three": "./js/lib/three.module.min.js" } }
+</script>
+<script src="js/audio.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/net.js"></script>
+<script type="module" src="js/scene3d.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

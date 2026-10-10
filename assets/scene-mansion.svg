@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#171a20"/>
+      <stop offset="0.55" stop-color="#0d0f13"/>
+      <stop offset="1" stop-color="#060608"/>
+    </linearGradient>
+    <radialGradient id="moon" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#e9e6d8"/>
+      <stop offset="0.35" stop-color="#c9c6b6"/>
+      <stop offset="1" stop-color="#0d0f13" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="house" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#101216"/>
+      <stop offset="1" stop-color="#050506"/>
+    </linearGradient>
+    <radialGradient id="window" cx="0.5" cy="0.4" r="0.6">
+      <stop offset="0" stop-color="#d98a3d"/>
+      <stop offset="1" stop-color="#3a1e0c"/>
+    </radialGradient>
+    <linearGradient id="mist" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a3f4a" stop-opacity="0"/>
+      <stop offset="1" stop-color="#5b616f" stop-opacity="0.5"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#sky)"/>
+
+  <!-- luna -->
+  <circle cx="1180" cy="230" r="230" fill="url(#moon)" opacity="0.9"/>
+  <circle cx="1180" cy="230" r="74" fill="#e9e6d8"/>
+  <circle cx="1150" cy="210" r="12" fill="#c9c6b6" opacity="0.6"/>
+  <circle cx="1205" cy="250" r="9" fill="#c9c6b6" opacity="0.5"/>
+
+  <!-- árboles secos lejanos -->
+  <g stroke="#0a0b0d" stroke-width="6" fill="none" opacity="0.8">
+    <path d="M120 900 L120 520 M120 610 L70 540 M120 590 L175 520 M120 660 L165 610"/>
+    <path d="M300 900 L300 560 M300 640 L255 585 M300 620 L345 570"/>
+    <path d="M1480 900 L1480 500 M1480 600 L1420 520 M1480 580 L1545 515 M1480 660 L1535 610"/>
+  </g>
+
+  <!-- mansión -->
+  <g>
+    <!-- cuerpo principal -->
+    <rect x="560" y="430" width="480" height="470" fill="url(#house)"/>
+    <!-- torre izquierda -->
+    <rect x="470" y="500" width="110" height="400" fill="url(#house)"/>
+    <polygon points="470,500 525,410 580,500" fill="#0b0d10"/>
+    <!-- torre derecha -->
+    <rect x="1020" y="470" width="130" height="430" fill="url(#house)"/>
+    <polygon points="1020,470 1085,360 1150,470" fill="#0b0d10"/>
+    <!-- tejado central -->
+    <polygon points="560,430 800,300 1040,430" fill="#0b0d10"/>
+    <!-- chimenea -->
+    <rect x="900" y="330" width="34" height="80" fill="#0b0d10"/>
+
+    <!-- ventanas iluminadas -->
+    <rect x="620" y="500" width="46" height="66" fill="url(#window)" opacity="0.85"/>
+    <rect x="740" y="500" width="46" height="66" fill="url(#window)" opacity="0.5"/>
+    <rect x="880" y="500" width="46" height="66" fill="url(#window)" opacity="0.75"/>
+    <rect x="1055" y="520" width="40" height="60" fill="url(#window)" opacity="0.4"/>
+    <rect x="500" y="560" width="40" height="58" fill="url(#window)" opacity="0.6"/>
+
+    <!-- puerta -->
+    <rect x="765" y="740" width="70" height="160" rx="35" fill="#0a0b0d"/>
+    <rect x="765" y="740" width="70" height="160" rx="35" fill="none" stroke="#20140a" stroke-width="3"/>
+    <circle cx="822" cy="825" r="3" fill="#d98a3d"/>
+
+    <!-- rejas de ventanas superiores -->
+    <g stroke="#050506" stroke-width="3">
+      <path d="M620 500 v66 M643 500 v66 M620 522 h46 M620 544 h46"/>
+      <path d="M880 500 v66 M903 500 v66 M880 522 h46 M880 544 h46"/>
+    </g>
+  </g>
+
+  <!-- verja / portón -->
+  <g stroke="#070809" stroke-width="5" opacity="0.9">
+    <path d="M330 900 V690 M360 900 V690 M390 900 V690 M420 900 V690 M330 705 H420"/>
+    <path d="M1180 900 V690 M1210 900 V690 M1240 900 V690 M1270 900 V690 M1180 705 H1270"/>
+  </g>
+
+  <!-- suelo -->
+  <rect x="0" y="850" width="1600" height="50" fill="#040405"/>
+
+  <!-- niebla baja -->
+  <rect x="0" y="600" width="1600" height="300" fill="url(#mist)"/>
+  <ellipse cx="400" cy="820" rx="520" ry="90" fill="#6b7180" opacity="0.18"/>
+  <ellipse cx="1150" cy="850" rx="600" ry="100" fill="#6b7180" opacity="0.16"/>
+  <ellipse cx="800" cy="880" rx="900" ry="120" fill="#7b818f" opacity="0.2"/>
+</svg>

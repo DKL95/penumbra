@@ -1,0 +1,6 @@
+node_modules/
+npm-debug.log*
+.DS_Store
+Thumbs.db
+# documento del profesor (cada integrante ya lo tiene)
+FE-GCW-051-SJFE-AD2026.docx
