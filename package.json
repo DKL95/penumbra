@@ -1,0 +1,13 @@
+{
+  "name": "penumbra",
+  "version": "0.2.0",
+  "description": "PENUMBRA — escape room de terror en WebGL (Gráficas Computacionales en Web, Grupo 051)",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}
