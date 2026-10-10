@@ -755,6 +755,7 @@ const Scene3D = (() => {
     player.speed = 0;
     cam.yaw = player.heading + Math.PI;  // detrás del personaje
     cam.pitch = -0.22;
+    cam.dist = player.role === "monster" ? 2.5 : 2.9;
 
     flashOn = true; battery = 1;
     if (player.role === "survivor") {
@@ -1023,7 +1024,7 @@ const Scene3D = (() => {
   }
 
   function updateCamera(dt) {
-    _target.copy(player.pos).y += player.role === "monster" ? 1.85 : 1.5;
+    _target.copy(player.pos).y += player.role === "monster" ? 1.85 : 1.35;
     const cp = Math.cos(cam.pitch);
     _fwd.set(-Math.sin(cam.yaw) * cp, Math.sin(cam.pitch), -Math.cos(cam.yaw) * cp);
     _right.set(Math.cos(cam.yaw), 0, -Math.sin(cam.yaw));
