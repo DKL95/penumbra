@@ -1,7 +1,7 @@
 /* =========================================================
    PENUMBRA — Escenario 3D (WebGL / Three.js)
-   El estudio de la Mansión Ravenwood construido SOLO con
-   figuras básicas (cajas, cilindros, planos, esferas, conos,
+   La Mansión Ravenwood (estudio, pasillo y gran salón)
+   construida SOLO con figuras básicas (cajas, cilindros, planos, esferas, conos,
    toros) y texturas procedurales dibujadas en <canvas>.
 
    - Iluminación AMBIENTAL (tenue, fría) + FOCAL (chimenea,
@@ -24,7 +24,12 @@ const Scene3D = (() => {
   const flames = [];
   let pendulum = null, chandelier = null, dust = null;
 
-  const ROOM = { w: 9, d: 7, h: 3.4 };
+  const ROOM = { w: 9, d: 7, h: 3.4 };                          // estudio (centro en el origen)
+  const DOOR_HALF = 0.67;                                        // medio ancho del hueco de la puerta
+  const CORR = { x1: -1.1, x2: 1.1, z1: ROOM.d / 2, z2: 11.5, h: 3.0 };   // pasillo
+  const HALL = { x1: -6, x2: 6, z1: 11.5, z2: 21.5, h: 4.6 };             // gran salón
+  const WALLS = [];          // cajas XZ de los muros (colisión y línea de visión)
+  const flickers = [];       // luces que parpadean
 
   /* ============================================================
      TEXTURAS PROCEDURALES (canvas 2D)
@@ -198,6 +203,114 @@ const Scene3D = (() => {
     return c;
   }
 
+  // piso del gran salón: mármol en damero, sucio y agrietado
+  function marbleCanvas() {
+    const c = cvs(512), x = c.getContext("2d");
+    const t = 128;
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+      const dark = (i + j) % 2;
+      x.fillStyle = dark ? "#16151a" : "#8d877a";
+      x.fillRect(i * t, j * t, t, t);
+      for (let k = 0; k < 5; k++) {           // vetas
+        x.strokeStyle = dark ? "rgba(120,110,100,.18)" : "rgba(40,35,30,.25)";
+        x.lineWidth = 0.5 + Math.random() * 1.5;
+        x.beginPath();
+        let px = i * t + Math.random() * t, py = j * t;
+        x.moveTo(px, py);
+        for (let s = 0; s < 6; s++) { px += (Math.random() - 0.5) * 40; py += t / 6; x.lineTo(px, py); }
+        x.stroke();
+      }
+      x.strokeStyle = "rgba(0,0,0,.6)"; x.lineWidth = 2;
+      x.strokeRect(i * t + 1, j * t + 1, t - 2, t - 2);
+    }
+    for (let i = 0; i < 10; i++) {
+      const rg = x.createRadialGradient(Math.random() * 512, Math.random() * 512, 4, Math.random() * 512, Math.random() * 512, 50 + Math.random() * 90);
+      rg.addColorStop(0, "rgba(20,14,8,.45)"); rg.addColorStop(1, "rgba(20,14,8,0)");
+      x.fillStyle = rg; x.fillRect(0, 0, 512, 512);
+    }
+    grain(x, 512, 512, 9000, 0.22);
+    return c;
+  }
+
+  // tapiz rojo oscuro con damasco dorado gastado
+  function damaskCanvas() {
+    const c = cvs(512), x = c.getContext("2d");
+    const g = x.createLinearGradient(0, 0, 0, 512);
+    g.addColorStop(0, "#3d1214"); g.addColorStop(1, "#24090b");
+    x.fillStyle = g; x.fillRect(0, 0, 512, 512);
+    x.strokeStyle = "rgba(170,130,70,.16)"; x.lineWidth = 2;
+    for (let gy = 0; gy < 512; gy += 128)
+      for (let gx = (gy / 128) % 2 ? 64 : 0; gx < 512 + 64; gx += 128) {
+        const cx = gx, cy = gy + 64;
+        x.beginPath();
+        x.moveTo(cx, cy - 48); x.bezierCurveTo(cx + 40, cy - 20, cx + 30, cy + 30, cx, cy + 48);
+        x.bezierCurveTo(cx - 30, cy + 30, cx - 40, cy - 20, cx, cy - 48);
+        x.moveTo(cx, cy - 20); x.lineTo(cx, cy + 20);
+        x.moveTo(cx - 14, cy); x.lineTo(cx + 14, cy);
+        x.stroke();
+      }
+    for (let i = 0; i < 8; i++) {                // humedad y manchas
+      const rg = x.createRadialGradient(Math.random() * 512, Math.random() * 512, 4, Math.random() * 512, Math.random() * 512, 60 + Math.random() * 100);
+      rg.addColorStop(0, "rgba(10,4,2,.5)"); rg.addColorStop(1, "rgba(10,4,2,0)");
+      x.fillStyle = rg; x.fillRect(0, 0, 512, 512);
+    }
+    grain(x, 512, 512, 7000, 0.2);
+    return c;
+  }
+
+  // alfombra larga del pasillo
+  function runnerCanvas() {
+    const c = cvs(256), x = c.getContext("2d");
+    x.fillStyle = "#3b1013"; x.fillRect(0, 0, 256, 256);
+    x.fillStyle = "#6b5226"; x.fillRect(14, 0, 8, 256); x.fillRect(234, 0, 8, 256);
+    x.fillStyle = "#24090b"; x.fillRect(30, 0, 196, 256);
+    x.strokeStyle = "rgba(160,120,60,.45)"; x.lineWidth = 3;
+    for (let y = 0; y < 256; y += 64) {
+      x.beginPath(); x.moveTo(128, y + 6); x.lineTo(196, y + 32); x.lineTo(128, y + 58); x.lineTo(60, y + 32); x.closePath(); x.stroke();
+    }
+    grain(x, 256, 256, 5000, 0.3);
+    return c;
+  }
+
+  // salpicadura de sangre (con transparencia, para calcomanías)
+  function bloodCanvas(seed = 1) {
+    const c = cvs(256), x = c.getContext("2d");
+    x.fillStyle = "rgba(70,4,4,.92)";
+    const blob = (px, py, r) => { x.beginPath(); x.arc(px, py, r, 0, Math.PI * 2); x.fill(); };
+    blob(128, 128, 38 + seed * 6);
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * Math.PI * 2, d = 40 + Math.random() * 70;
+      blob(128 + Math.cos(a) * d, 128 + Math.sin(a) * d, 2 + Math.random() * 9);
+    }
+    for (let i = 0; i < 6; i++) {
+      const a = Math.random() * Math.PI * 2;
+      x.strokeStyle = "rgba(70,4,4,.85)"; x.lineWidth = 5 + Math.random() * 6; x.lineCap = "round";
+      x.beginPath(); x.moveTo(128, 128); x.lineTo(128 + Math.cos(a) * (60 + Math.random() * 40), 128 + Math.sin(a) * (60 + Math.random() * 40)); x.stroke();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
+  // mensaje escrito con sangre en la pared
+  function writingCanvas(text) {
+    const c = document.createElement("canvas");
+    c.width = 1024; c.height = 256;
+    const x = c.getContext("2d");
+    x.font = "bold 130px Georgia, serif";
+    x.textAlign = "center"; x.textBaseline = "middle";
+    x.fillStyle = "rgba(110,6,6,.95)";
+    x.fillText(text, 512, 110);
+    // chorreones
+    for (let i = 0; i < 40; i++) {
+      const px = 90 + Math.random() * 844, py = 120 + Math.random() * 40;
+      x.fillRect(px, py, 3 + Math.random() * 4, 30 + Math.random() * 90);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
   /* ============================================================
      HELPERS DE MALLA
      ============================================================ */
@@ -233,6 +346,48 @@ const Scene3D = (() => {
     return f;
   }
 
+  // material con la textura repetida a la medida de la superficie
+  const tiledCache = {};
+  function tiled(base, rx, ry) {
+    const key = `${base.uuid}:${rx.toFixed(2)}:${ry.toFixed(2)}`;
+    if (tiledCache[key]) return tiledCache[key];
+    const m = base.clone();
+    if (base.map) { m.map = base.map.clone(); m.map.repeat.set(rx, ry); m.map.needsUpdate = true; }
+    return (tiledCache[key] = m);
+  }
+
+  // muro de (x1..x2, z1..z2) que también es colisión si llega al piso
+  function wallBox(x1, x2, z1, z2, h, mat, y0 = 0) {
+    const len = Math.max(x2 - x1, z2 - z1);
+    const m = box(x2 - x1, h, z2 - z1, mat.map ? tiled(mat, len / 3, h / 2.125) : mat,
+      (x1 + x2) / 2, y0 + h / 2, (z1 + z2) / 2);
+    if (y0 < 1.5) WALLS.push({ x1, x2, z1, z2 });
+    return m;
+  }
+
+  function floorPlane(x1, x2, z1, z2, y, mat, tileM, down = false) {
+    const w = x2 - x1, d = z2 - z1;
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat.map ? tiled(mat, w / tileM, d / tileM) : mat);
+    p.rotation.x = down ? Math.PI / 2 : -Math.PI / 2;
+    p.position.set((x1 + x2) / 2, y, (z1 + z2) / 2);
+    p.receiveShadow = true;
+    scene.add(p);
+    return p;
+  }
+
+  // plano con textura transparente pegado a una superficie (sangre, pintadas)
+  function decal(texture, w, h, x, y, z, rx, ry, rz = 0) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({
+      map: texture, transparent: true, roughness: 0.35, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -2,
+    }));
+    m.position.set(x, y, z);
+    m.rotation.set(rx, ry, rz);
+    m.receiveShadow = true;
+    scene.add(m);
+    return m;
+  }
+
   /* ============================================================
      MATERIALES
      ============================================================ */
@@ -253,6 +408,16 @@ const Scene3D = (() => {
     M.wax = new THREE.MeshStandardMaterial({ color: 0xd8cba0, roughness: 0.5, emissive: 0x120a00 });
     M.paper = new THREE.MeshStandardMaterial({ color: 0xb7ad93, roughness: 0.9 });
     M.emberMat = new THREE.MeshBasicMaterial({ color: 0xff5a1e });
+    // pasillo y gran salón
+    M.wallRed = new THREE.MeshStandardMaterial({ map: tex(damaskCanvas(), 1, 1), roughness: 0.95 });
+    M.marble = new THREE.MeshStandardMaterial({ map: tex(marbleCanvas(), 1, 1), roughness: 0.35, metalness: 0.05 });
+    M.runner = new THREE.MeshStandardMaterial({ map: tex(runnerCanvas(), 1, 4), roughness: 1 });
+    M.linen = new THREE.MeshStandardMaterial({ color: 0x9c9384, roughness: 0.95 });
+    M.stone = new THREE.MeshStandardMaterial({ color: 0x4a4640, roughness: 0.85 });
+    M.steel = new THREE.MeshStandardMaterial({ color: 0x5c6068, roughness: 0.3, metalness: 0.9 });
+    M.ivory = new THREE.MeshStandardMaterial({ color: 0xcfc7b4, roughness: 0.4 });
+    M.night = new THREE.MeshBasicMaterial({ color: 0x0d1526 });
+    M.mirror = new THREE.MeshStandardMaterial({ color: 0x8a9298, roughness: 0.08, metalness: 1 });
   }
 
   /* ============================================================
@@ -270,23 +435,26 @@ const Scene3D = (() => {
     ceil.position.y = h;
     scene.add(ceil);
 
-    box(w, h, 0.3, M.wall, 0, h / 2, -d / 2);
-    box(w, h, 0.3, M.wall, 0, h / 2, d / 2);
-    box(0.3, h, d, M.wall, -w / 2, h / 2, 0);
-    box(0.3, h, d, M.wall, w / 2, h / 2, 0);
+    const D = DOOR_HALF;
+    wallBox(-w / 2 - 0.15, w / 2 + 0.15, -d / 2 - 0.15, -d / 2 + 0.15, h, M.wall);
+    wallBox(-w / 2 - 0.15, -w / 2 + 0.15, -d / 2, d / 2, h, M.wall);
+    wallBox(w / 2 - 0.15, w / 2 + 0.15, -d / 2, d / 2, h, M.wall);
+    // pared sur con el hueco de la puerta que lleva al pasillo
+    wallBox(-w / 2 - 0.15, -D, d / 2 - 0.15, d / 2 + 0.15, h, M.wall);
+    wallBox(D, w / 2 + 0.15, d / 2 - 0.15, d / 2 + 0.15, h, M.wall);
+    wallBox(-D, D, d / 2 - 0.15, d / 2 + 0.15, h - 2.35, M.wall, 2.35);
 
     // zócalos y molduras
-    for (const z of [-d / 2 + 0.17, d / 2 - 0.17]) {
-      box(w, 0.22, 0.06, M.trim, 0, 0.11, z);
-      box(w, 0.12, 0.08, M.trim, 0, h - 0.14, z);
-    }
+    box(w, 0.22, 0.06, M.trim, 0, 0.11, -d / 2 + 0.17);
+    for (const sx of [-1, 1]) box(w / 2 - 0.75, 0.22, 0.06, M.trim, sx * (w / 4 + 0.375), 0.11, d / 2 - 0.17);
+    for (const z of [-d / 2 + 0.17, d / 2 - 0.17]) box(w, 0.12, 0.08, M.trim, 0, h - 0.14, z);
     for (const x of [-w / 2 + 0.17, w / 2 - 0.17]) {
       box(0.06, 0.22, d, M.trim, x, 0.11, 0);
       box(0.08, 0.12, d, M.trim, x, h - 0.14, 0);
     }
     // panelado bajo
     box(0.04, 1.0, d - 0.4, M.woodDark, -w / 2 + 0.19, 0.55, 0);
-    box(w - 0.4, 1.0, 0.04, M.woodDark, 0, 0.55, d / 2 - 0.19);
+    for (const sx of [-1, 1]) box(w / 2 - 0.95, 1.0, 0.04, M.woodDark, sx * (w / 4 + 0.425), 0.55, d / 2 - 0.19);
 
     // vigas del techo
     for (let i = -1; i <= 1; i++)
@@ -306,11 +474,17 @@ const Scene3D = (() => {
     box(0.16, 2.35, 0.24, M.trim, -0.75, 1.17, z);
     box(0.16, 2.35, 0.24, M.trim, 0.75, 1.17, z);
 
-    const leaf = box(1.24, 2.28, 0.1, M.woodMid, 0, 1.16, z - 0.02);
+    // hoja abierta hacia el pasillo, girada sobre la bisagra izquierda
+    const leaf = new THREE.Group();
+    leaf.position.set(-0.62, 0, z + 0.08);
+    leaf.rotation.y = -1.75;
+    scene.add(leaf);
+    box(1.24, 2.28, 0.08, M.woodMid, 0.62, 1.16, 0, leaf);
     for (let iy = 0; iy < 3; iy++)
-      box(0.9, 0.58, 0.04, M.woodDark, 0, 0.5 + iy * 0.72, z - 0.09);
-    const knob = sph(0.06, M.brass, 0.5, 1.12, z - 0.11);
-    cyl(0.02, 0.02, 0.08, M.brass, 0.5, 1.12, z - 0.06).rotation.x = Math.PI / 2;
+      for (const side of [-1, 1]) box(0.9, 0.58, 0.03, M.woodDark, 0.62, 0.5 + iy * 0.72, side * 0.05, leaf);
+    sph(0.05, M.brass, 1.12, 1.12, -0.08, leaf);
+    sph(0.05, M.brass, 1.12, 1.12, 0.08, leaf);
+    OBSTACLES.push({ x1: -0.9, x2: -0.55, z1: 3.5, z2: 4.8 });
   }
 
   function buildWindow() {
@@ -581,12 +755,18 @@ const Scene3D = (() => {
   }
 
   function buildDust() {
-    const N = 130;
+    const N = 320;
     const pos = new Float32Array(N * 3);
+    const zones = [
+      [-ROOM.w / 2, ROOM.w / 2, -ROOM.d / 2, ROOM.d / 2],
+      [CORR.x1, CORR.x2, CORR.z1, CORR.z2],
+      [HALL.x1, HALL.x2, HALL.z1, HALL.z2],
+    ];
     for (let i = 0; i < N; i++) {
-      pos[i * 3] = (Math.random() - 0.5) * ROOM.w;
+      const [x1, x2, z1, z2] = zones[i < 130 ? 0 : i < 170 ? 1 : 2];
+      pos[i * 3] = x1 + Math.random() * (x2 - x1);
       pos[i * 3 + 1] = Math.random() * ROOM.h;
-      pos[i * 3 + 2] = (Math.random() - 0.5) * ROOM.d;
+      pos[i * 3 + 2] = z1 + Math.random() * (z2 - z1);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
@@ -625,10 +805,340 @@ const Scene3D = (() => {
   }
 
   /* ============================================================
+     PASILLO: une el estudio con el gran salón
+     ============================================================ */
+  function sconce(x, z, side) {
+    // candelabro de pared: placa, brazo, vela, llama y luz
+    box(0.04, 0.3, 0.16, M.brass, x, 1.95, z);
+    const arm = cyl(0.012, 0.012, 0.2, M.brass, x - side * 0.1, 1.9, z);
+    arm.rotation.z = Math.PI / 2;
+    cyl(0.04, 0.03, 0.04, M.brass, x - side * 0.2, 1.92, z);
+    cyl(0.022, 0.022, 0.14, M.wax, x - side * 0.2, 2.01, z);
+    flameMesh(0.9).position.set(x - side * 0.2, 2.13, z);
+    const l = new THREE.PointLight(0xffb060, 0.8, 4.5, 2);
+    l.position.set(x - side * 0.3, 2.1, z);
+    scene.add(l);
+    return l;
+  }
+
+  function sideDoor(x, z, side) {
+    // puerta cerrada en la pared del pasillo (side = -1 oeste, 1 este)
+    const fx = x - side * 0.02;
+    box(0.2, 0.14, 1.3, M.trim, fx, 2.3, z);
+    box(0.2, 2.3, 0.12, M.trim, fx, 1.15, z - 0.6);
+    box(0.2, 2.3, 0.12, M.trim, fx, 1.15, z + 0.6);
+    box(0.06, 2.24, 1.1, M.woodMid, x - side * 0.05, 1.12, z);
+    for (let iy = 0; iy < 3; iy++) box(0.03, 0.56, 0.8, M.woodDark, x - side * 0.09, 0.5 + iy * 0.7, z);
+    sph(0.05, M.brass, x - side * 0.12, 1.1, z + 0.4);
+  }
+
+  function portrait(pw, ph, x, y, z, ry, tilt = 0) {
+    const g = new THREE.Group();
+    g.position.set(x, y, z); g.rotation.set(0, ry, tilt);
+    box(pw + 0.12, ph + 0.12, 0.07, M.brass, 0, 0, 0, g);
+    const art = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph),
+      new THREE.MeshStandardMaterial({ map: tex(paintingCanvas(), 1, 1), roughness: 0.9 }));
+    art.position.z = 0.04;
+    g.add(art);
+    scene.add(g);
+    return g;
+  }
+
+  function buildCorridor() {
+    const { x1, x2, z1, z2, h } = CORR;
+    floorPlane(x1, x2, z1, z2, 0, M.floor, 3);
+    floorPlane(x1, x2, z1, z2, h, M.ceiling, 3, true);
+    wallBox(x1 - 0.15, x1 + 0.15, z1, z2, h, M.wall);
+    wallBox(x2 - 0.15, x2 + 0.15, z1, z2, h, M.wall);
+    const len = z2 - z1, mid = (z1 + z2) / 2;
+    for (const x of [x1 + 0.17, x2 - 0.17]) {
+      box(0.06, 0.22, len, M.trim, x, 0.11, mid);
+      box(0.08, 0.12, len, M.trim, x, h - 0.14, mid);
+      box(0.04, 0.95, len, M.woodDark, x + (x < 0 ? 0.02 : -0.02), 0.52, mid);
+    }
+    for (let z = z1 + 1.5; z < z2; z += 2) box(x2 - x1, 0.14, 0.18, M.woodDark, 0, h - 0.08, z);
+
+    // alfombra larga
+    const run = new THREE.Mesh(new THREE.PlaneGeometry(1.1, len - 0.8), M.runner);
+    run.rotation.x = -Math.PI / 2;
+    run.position.set(0.05, 0.012, mid);
+    run.receiveShadow = true;
+    scene.add(run);
+
+    sideDoor(x1 + 0.15, 6.2, -1);
+    sideDoor(x2 - 0.15, 9.6, 1);
+
+    portrait(0.6, 0.8, x1 + 0.19, 1.8, 8.3, Math.PI / 2, 0.05);
+    portrait(0.7, 0.9, x2 - 0.19, 1.85, 5.0, -Math.PI / 2, -0.04);
+    // un retrato caído, apoyado contra la pared
+    const fallen = portrait(0.7, 0.9, x2 - 0.32, 0.45, 7.9, -Math.PI / 2, 0);
+    fallen.rotation.x = -0.25;
+
+    // espejo roto
+    box(0.05, 1.1, 0.75, M.woodDark, x1 + 0.17, 1.6, 10.4);
+    const mirror = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.95), M.mirror);
+    mirror.position.set(x1 + 0.2, 1.6, 10.4); mirror.rotation.y = Math.PI / 2;
+    scene.add(mirror);
+    const cracks = [];
+    for (let i = 0; i < 9; i++) {
+      const a = Math.random() * Math.PI * 2, r = 0.2 + Math.random() * 0.25;
+      cracks.push(0, 0.1, 0.05, Math.cos(a) * r * 0.6, 0.1 + Math.sin(a) * r, 0.05);
+    }
+    const cg = new THREE.BufferGeometry();
+    cg.setAttribute("position", new THREE.Float32BufferAttribute(cracks, 3));
+    const cl = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x111111 }));
+    cl.position.set(x1 + 0.17, 1.55, 10.4); cl.rotation.y = Math.PI / 2;
+    scene.add(cl);
+
+    // consola con jarrón y flores secas
+    const cx = x2 - 0.33, cz = 7.0;
+    box(0.36, 0.05, 1.0, M.woodDark, cx, 0.82, cz);
+    for (const sz of [-0.44, 0.44]) for (const sx of [-0.14, 0.14]) cyl(0.02, 0.02, 0.82, M.woodDark, cx + sx, 0.41, cz + sz);
+    cyl(0.05, 0.08, 0.26, M.ivory, cx, 0.98, cz - 0.2);
+    for (let i = 0; i < 5; i++) {
+      const st = cyl(0.004, 0.004, 0.35, M.woodDark, cx + (Math.random() - 0.5) * 0.06, 1.25, cz - 0.2 + (Math.random() - 0.5) * 0.06);
+      st.rotation.set((Math.random() - 0.5) * 0.5, 0, (Math.random() - 0.5) * 0.5);
+    }
+    OBSTACLES.push({ x1: cx - 0.2, x2: x2, z1: cz - 0.52, z2: cz + 0.52 });
+
+    sconce(x1 + 0.17, 4.9, -1);
+    sconce(x2 - 0.17, 8.4, 1);
+
+    // foco del techo que parpadea
+    cyl(0.006, 0.006, 0.5, M.metal, 0, h - 0.25, 10.2);
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), new THREE.MeshBasicMaterial({ color: 0xffe2a8 }));
+    bulb.position.set(0, h - 0.55, 10.2);
+    scene.add(bulb);
+    const bl = new THREE.PointLight(0xffd8a0, 0.9, 5, 2);
+    bl.position.set(0, h - 0.65, 10.2);
+    scene.add(bl);
+    flickers.push({ light: bl, bulb, base: 0.9 });
+
+    // manos ensangrentadas en la pared antes del salón
+    const hand = bloodCanvas(0);
+    decal(hand, 0.5, 0.5, x2 - 0.155, 1.3, 11.0, 0, -Math.PI / 2, 0.4);
+    decal(hand, 0.4, 0.4, x2 - 0.155, 1.0, 10.6, 0, -Math.PI / 2, -0.3);
+  }
+
+  /* ============================================================
+     GRAN SALÓN: comedor, piano, armaduras y escalera
+     ============================================================ */
+  function chair(x, z, ry) {
+    const g = new THREE.Group();
+    g.position.set(x, 0, z); g.rotation.y = ry;
+    box(0.46, 0.06, 0.46, M.woodDark, 0, 0.48, 0, g);
+    box(0.46, 0.95, 0.06, M.woodDark, 0, 0.98, -0.2, g);
+    box(0.36, 0.5, 0.03, M.wallRed, 0, 1.05, -0.165, g);
+    for (const sx of [-0.19, 0.19]) for (const sz of [-0.19, 0.19]) cyl(0.025, 0.025, 0.48, M.woodDark, sx, 0.24, sz, g);
+    scene.add(g);
+    return g;
+  }
+
+  function armor(x, z, ry) {
+    const g = new THREE.Group();
+    g.position.set(x, 0, z); g.rotation.y = ry;
+    box(0.6, 0.18, 0.6, M.stone, 0, 0.09, 0, g);
+    for (const sx of [-0.1, 0.1]) cyl(0.07, 0.06, 0.8, M.steel, sx, 0.6, 0, g);
+    cyl(0.17, 0.13, 0.55, M.steel, 0, 1.28, 0, g);
+    box(0.5, 0.1, 0.2, M.steel, 0, 1.52, 0, g);
+    for (const sx of [-0.26, 0.26]) { const a = cyl(0.05, 0.045, 0.6, M.steel, sx, 1.2, 0.02, g); a.rotation.z = sx * 0.3; }
+    sph(0.13, M.steel, 0, 1.72, 0, g);
+    box(0.2, 0.04, 0.05, M.soot, 0, 1.72, 0.12, g);
+    const plume = cyl(0.02, 0.05, 0.25, M.wallRed, 0, 1.92, -0.02, g);
+    plume.rotation.x = -0.4;
+    cyl(0.015, 0.015, 2.3, M.woodDark, 0.32, 1.15, 0.05, g);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.22, 6), M.steel);
+    tip.position.set(0.32, 2.4, 0.05); g.add(tip);
+    scene.add(g);
+    OBSTACLES.push({ x1: x - 0.35, x2: x + 0.35, z1: z - 0.35, z2: z + 0.35 });
+  }
+
+  function hallWindow(x, z, side, moon) {
+    // ventanal alto en la pared este (side = 1) u oeste (-1)
+    const fx = x - side * 0.17;
+    const night = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 2.4), M.night);
+    night.position.set(fx - side * 0.01, 2.4, z); night.rotation.y = -side * Math.PI / 2;
+    scene.add(night);
+    if (moon) {
+      const m = new THREE.Mesh(new THREE.CircleGeometry(0.14, 20), new THREE.MeshBasicMaterial({ color: 0xdfe3d8 }));
+      m.position.set(fx - side * 0.02, 3.15, z + 0.3); m.rotation.y = -side * Math.PI / 2;
+      scene.add(m);
+    }
+    box(0.12, 0.12, 1.5, M.trim, fx - side * 0.04, 3.65, z);
+    box(0.2, 0.16, 1.6, M.trim, fx - side * 0.06, 1.15, z);
+    for (const dz of [-0.7, 0, 0.7]) box(0.08, 2.5, 0.08, M.trim, fx - side * 0.03, 2.4, z + dz);
+    for (const y of [1.8, 2.5, 3.2]) box(0.06, 0.05, 1.4, M.trim, fx - side * 0.03, y, z);
+    const curtain = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 3.2), M.cloth);
+    curtain.position.set(fx - side * 0.12, 2.3, z - 0.85); curtain.rotation.y = -side * Math.PI / 2;
+    scene.add(curtain);
+  }
+
+  function buildHall() {
+    const { x1, x2, z1, z2, h } = HALL;
+    const D = CORR.x2 - 0.15;                            // medio ancho de la entrada
+    floorPlane(x1, x2, z1, z2, 0, M.marble, 3);
+    floorPlane(x1, x2, z1, z2, h, M.ceiling, 3, true);
+    wallBox(x1 - 0.15, -D, z1 - 0.15, z1 + 0.15, h, M.wallRed);
+    wallBox(D, x2 + 0.15, z1 - 0.15, z1 + 0.15, h, M.wallRed);
+    wallBox(-D, D, z1 - 0.15, z1 + 0.15, h - CORR.h, M.wallRed, CORR.h);
+    wallBox(x1 - 0.15, x2 + 0.15, z2 - 0.15, z2 + 0.15, h, M.wallRed);
+    wallBox(x1 - 0.15, x1 + 0.15, z1, z2, h, M.wallRed);
+    wallBox(x2 - 0.15, x2 + 0.15, z1, z2, h, M.wallRed);
+
+    // panelado bajo y cornisa
+    const W = x2 - x1, L = z2 - z1, mz = (z1 + z2) / 2;
+    for (const x of [x1 + 0.17, x2 - 0.17]) {
+      box(0.05, 1.15, L, M.woodDark, x, 0.58, mz);
+      box(0.1, 0.18, L, M.trim, x, h - 0.12, mz);
+    }
+    box(W, 1.15, 0.05, M.woodDark, 0, 0.58, z2 - 0.17);
+    box(W, 0.18, 0.1, M.trim, 0, h - 0.12, z2 - 0.17);
+    for (const sx of [-1, 1]) box(x2 - D - 0.05, 1.15, 0.05, M.woodDark, sx * (D + (x2 - D) / 2), 0.58, z1 + 0.17);
+    box(W, 0.18, 0.1, M.trim, 0, h - 0.12, z1 + 0.17);
+    for (let x = x1 + 2; x < x2; x += 2) box(0.22, 0.2, L, M.woodDark, x, h - 0.1, mz);
+
+    // columnas a los lados de la entrada
+    for (const sx of [-1.9, 1.9]) {
+      const cz = z1 + 1.1;
+      box(0.55, 0.25, 0.55, M.stone, sx, 0.125, cz);
+      cyl(0.2, 0.22, h - 0.5, M.stone, sx, h / 2, cz, null, 16);
+      box(0.55, 0.25, 0.55, M.stone, sx, h - 0.33, cz);
+      OBSTACLES.push({ x1: sx - 0.28, x2: sx + 0.28, z1: cz - 0.28, z2: cz + 0.28 });
+    }
+
+    // --- comedor (ala oeste) ---
+    const tx = -3.6, tz1 = 13.0, tz2 = 18.0, tzm = (tz1 + tz2) / 2;
+    box(1.1, 0.08, tz2 - tz1, M.woodMid, tx, 0.78, tzm);
+    box(1.22, 0.02, tz2 - tz1 + 0.12, M.linen, tx, 0.83, tzm);
+    for (const sx of [-1, 1]) {
+      box(0.02, 0.3, tz2 - tz1 + 0.12, M.linen, tx + sx * 0.61, 0.68, tzm);
+      for (const z of [tz1 + 0.3, tzm, tz2 - 0.3]) cyl(0.06, 0.07, 0.76, M.woodDark, tx + sx * 0.45, 0.38, z);
+    }
+    [13.7, 14.9, 16.1, 17.3].forEach((z, i) => {
+      chair(tx - 0.95, z, Math.PI / 2);
+      if (i !== 2) chair(tx + 0.95, z, -Math.PI / 2);
+      // platos y copas
+      cyl(0.13, 0.11, 0.015, M.ivory, tx - 0.32, 0.845, z);
+      cyl(0.13, 0.11, 0.015, M.ivory, tx + 0.32, 0.845, z);
+      cyl(0.03, 0.01, 0.1, M.brass, tx - 0.32, 0.9, z + 0.2);
+    });
+    // una silla volcada y un plato roto en el piso
+    const fallenChair = chair(-2.3, 16.3, -0.6);
+    fallenChair.rotation.x = -Math.PI / 2;
+    fallenChair.position.y = 0.23;
+    for (let i = 0; i < 4; i++) {
+      const sh = box(0.08 + Math.random() * 0.06, 0.01, 0.05 + Math.random() * 0.05, M.ivory, -2.0 + Math.random() * 0.5, 0.01, 15.6 + Math.random() * 0.5);
+      sh.rotation.y = Math.random() * 3;
+    }
+    // candelabro de mesa
+    cyl(0.1, 0.12, 0.04, M.brass, tx, 0.86, tzm);
+    cyl(0.02, 0.02, 0.4, M.brass, tx, 1.06, tzm);
+    box(0.03, 0.03, 0.44, M.brass, tx, 1.24, tzm);
+    for (const dz of [-0.2, 0, 0.2]) {
+      cyl(0.02, 0.02, 0.12, M.wax, tx, 1.3 + (dz ? 0 : 0.06), tzm + dz);
+      flameMesh(0.8).position.set(tx, 1.42 + (dz ? 0 : 0.06), tzm + dz);
+    }
+    const tl = new THREE.PointLight(0xffb060, 1.1, 6, 2);
+    tl.position.set(tx, 1.6, tzm);
+    scene.add(tl);
+    OBSTACLES.push({ x1: tx - 1.25, x2: tx + 1.25, z1: tz1, z2: tz2 });
+    OBSTACLES.push({ x1: -2.75, x2: -1.85, z1: 15.9, z2: 16.7 });     // silla volcada
+
+    // --- piano de cola (ala este) ---
+    const px = 4.3, pz = 13.6;
+    const piano = new THREE.Group();
+    piano.position.set(px, 0, pz); piano.rotation.y = -0.35;
+    scene.add(piano);
+    box(1.4, 0.32, 1.9, M.soot, 0, 0.85, 0, piano);
+    box(1.36, 0.03, 1.86, M.woodDark, 0, 1.02, 0, piano);
+    const lid = box(1.36, 0.03, 1.7, M.soot, -0.1, 1.45, 0.05, piano);
+    lid.rotation.z = 0.55;
+    cyl(0.012, 0.012, 0.75, M.brass, 0.45, 1.27, 0.2, piano);
+    box(1.3, 0.06, 0.3, M.ivory, 0, 0.98, -1.05, piano);
+    for (let k = 0; k < 14; k++) box(0.03, 0.02, 0.16, M.soot, -0.6 + k * 0.095, 1.015, -1.1, piano);
+    for (const [sx, sz] of [[-0.6, -0.8], [0.6, -0.8], [0, 0.85]]) cyl(0.06, 0.05, 0.7, M.soot, sx, 0.35, sz, piano);
+    box(0.9, 0.06, 0.35, M.woodDark, 0, 0.5, -1.6, piano);
+    for (const sx of [-0.38, 0.38]) cyl(0.03, 0.03, 0.5, M.woodDark, sx, 0.25, -1.6, piano);
+    OBSTACLES.push({ x1: px - 1.0, x2: px + 1.0, z1: pz - 1.3, z2: pz + 1.1 });
+    OBSTACLES.push({ x1: px - 0.7, x2: px + 0.3, z1: pz - 1.95, z2: pz - 1.3 });   // banco
+
+    // --- sillones junto a los ventanales ---
+    for (const [ax, az, ry] of [[4.9, 16.6, -Math.PI / 2 - 0.3], [4.9, 18.2, -Math.PI / 2 + 0.2]]) {
+      const g = new THREE.Group();
+      g.position.set(ax, 0, az); g.rotation.y = ry;
+      box(0.8, 0.4, 0.75, M.wallRed, 0, 0.3, 0, g);
+      box(0.8, 0.7, 0.18, M.wallRed, 0, 0.75, -0.3, g);
+      for (const sx of [-0.36, 0.36]) box(0.12, 0.35, 0.7, M.wallRed, sx, 0.62, 0, g);
+      scene.add(g);
+      OBSTACLES.push({ x1: ax - 0.48, x2: ax + 0.48, z1: az - 0.48, z2: az + 0.48 });
+    }
+    hallWindow(x2, 15.2, 1, false);
+    hallWindow(x2, 19.8, 1, true);
+    const moonFill = new THREE.PointLight(0x8fa6d8, 1.2, 10, 2);
+    moonFill.position.set(x2 - 1.2, 2.6, 17.6);
+    scene.add(moonFill);
+    // relleno frío para que el salón se lea completo sin perder la penumbra
+    const hallFill = new THREE.PointLight(0x8f9bcb, 1.1, 16, 1.6);
+    hallFill.position.set(0, 3.2, 16.0);
+    scene.add(hallFill);
+
+    // --- escalera al fondo ---
+    const steps = 10, sw = 3.0, sz0 = 18.0, rise = 0.27, run = (z2 - 0.15 - sz0) / steps;
+    for (let i = 0; i < steps; i++) {
+      box(sw, rise * (i + 1), run, i % 2 ? M.woodDark : M.woodMid, 0, rise * (i + 1) / 2, sz0 + run * (i + 0.5));
+      box(sw - 0.6, 0.012, run, M.runner, 0, rise * (i + 1) + 0.006, sz0 + run * (i + 0.5));
+    }
+    const top = rise * steps, slope = Math.atan2(top, z2 - 0.15 - sz0);
+    for (const sx of [-sw / 2 - 0.05, sw / 2 + 0.05]) {
+      for (let i = 0; i < steps; i += 2) cyl(0.025, 0.025, 0.9, M.woodDark, sx, rise * (i + 1) + 0.45, sz0 + run * (i + 0.5));
+      box(0.3, 1.3, 0.3, M.woodDark, sx, 0.65, sz0 - 0.1);
+      sph(0.12, M.woodDark, sx, 1.4, sz0 - 0.1);
+      const rail = box(0.08, 0.06, Math.hypot(top, z2 - sz0) + 0.2, M.woodDark, sx, top / 2 + 0.95, (sz0 + z2) / 2);
+      rail.rotation.x = -slope;
+    }
+    portrait(1.3, 1.6, 0, top + 1.2, z2 - 0.19, Math.PI, 0.03);
+    OBSTACLES.push({ x1: -sw / 2 - 0.2, x2: sw / 2 + 0.2, z1: sz0 - 0.25, z2: z2 });
+
+    armor(-2.3, 17.4, 0.3);
+    armor(2.3, 17.4, -0.3);
+
+    // --- lámpara de araña grande ---
+    const ch = new THREE.Group();
+    ch.position.set(0, h - 0.05, 15.2);
+    scene.add(ch);
+    cyl(0.015, 0.015, 0.9, M.metal, 0, -0.45, 0, ch);
+    for (const [r, y, n] of [[0.75, -1.0, 10], [0.4, -0.85, 6]]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.025, 8, 32), M.brass);
+      ring.rotation.x = Math.PI / 2; ring.position.y = y;
+      ch.add(ring);
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const cx = Math.cos(a) * r, cz = Math.sin(a) * r;
+        cyl(0.018, 0.018, 0.12, M.wax, cx, y + 0.08, cz, ch);
+        // algunas velas están apagadas
+        if (Math.random() < 0.75) flameMesh(0.7).position.set(cx, h - 0.05 + y + 0.19, 15.2 + cz);
+      }
+    }
+    const cl = new THREE.PointLight(0xffc890, 1.4, 11, 2);
+    cl.position.set(0, h - 1.4, 15.2);
+    scene.add(cl);
+    flickers.push({ light: cl, base: 1.4, soft: true });
+
+    // --- sangre y el mensaje en la pared ---
+    decal(writingCanvas("NO ESTÁS SOLO"), 3.4, 0.85, x1 + 0.16, 2.75, tzm, 0, Math.PI / 2);
+    decal(bloodCanvas(2), 1.6, 1.6, 2.6, 0.014, 15.6, -Math.PI / 2, 0, 0.5);
+    [[2.0, 16.3], [1.5, 16.8], [1.0, 17.3], [0.6, 17.7], [-0.2, 12.2], [0.3, 11.9]].forEach(([dx, dz], i) =>
+      decal(bloodCanvas(0), 0.35 + (i % 2) * 0.15, 0.35 + (i % 2) * 0.15, dx, 0.014, dz, -Math.PI / 2, 0, i));
+    const redLight = new THREE.PointLight(0xff2a1a, 0.5, 4, 2);
+    redLight.position.set(x1 + 0.8, 2.5, tzm);
+    scene.add(redLight);
+  }
+
+  /* ============================================================
      COLISIONES (círculo del personaje vs. cajas XZ del mobiliario)
      ============================================================ */
   const PLAYER_R = 0.3;
-  const WALL = { x: ROOM.w / 2 - 0.15 - PLAYER_R, z: ROOM.d / 2 - 0.15 - PLAYER_R };
+  // los muros (WALLS) se registran al construirlos; aquí, el mobiliario del estudio
   const OBSTACLES = [
     { x1: 3.85, x2: 4.5, z1: -1.5, z2: 1.5 },     // chimenea
     { x1: 3.7, x2: 4.5, z1: -3.2, z2: -1.3 },     // librero
@@ -640,28 +1150,60 @@ const Scene3D = (() => {
   ];
 
   function collide(pos, r = PLAYER_R) {
-    for (const b of OBSTACLES) {
-      const cx = THREE.MathUtils.clamp(pos.x, b.x1, b.x2);
-      const cz = THREE.MathUtils.clamp(pos.z, b.z1, b.z2);
-      const dx = pos.x - cx, dz = pos.z - cz;
-      const d2 = dx * dx + dz * dz;
-      if (d2 < r * r) {
-        if (d2 > 1e-8) {
-          const d = Math.sqrt(d2);
-          pos.x = cx + (dx / d) * r;
-          pos.z = cz + (dz / d) * r;
-        } else {
-          // el centro quedó dentro de la caja: sacarlo por el lado más cercano
-          const opts = [
-            [b.x1 - r - pos.x, 0], [b.x2 + r - pos.x, 0],
-            [0, b.z1 - r - pos.z], [0, b.z2 + r - pos.z],
-          ].sort((a, c) => Math.abs(a[0] + a[1]) - Math.abs(c[0] + c[1]));
-          pos.x += opts[0][0]; pos.z += opts[0][1];
-        }
+    for (const b of WALLS) pushOut(pos, b, r);
+    for (const b of OBSTACLES) pushOut(pos, b, r);
+    // red de seguridad: nunca fuera de la mansión
+    pos.x = THREE.MathUtils.clamp(pos.x, HALL.x1 + r, HALL.x2 - r);
+    pos.z = THREE.MathUtils.clamp(pos.z, -ROOM.d / 2 + r, HALL.z2 - r);
+  }
+
+  function pushOut(pos, b, r) {
+    const cx = THREE.MathUtils.clamp(pos.x, b.x1, b.x2);
+    const cz = THREE.MathUtils.clamp(pos.z, b.z1, b.z2);
+    const dx = pos.x - cx, dz = pos.z - cz;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < r * r) {
+      if (d2 > 1e-8) {
+        const d = Math.sqrt(d2);
+        pos.x = cx + (dx / d) * r;
+        pos.z = cz + (dz / d) * r;
+      } else {
+        // el centro quedó dentro de la caja: sacarlo por el lado más cercano
+        const opts = [
+          [b.x1 - r - pos.x, 0], [b.x2 + r - pos.x, 0],
+          [0, b.z1 - r - pos.z], [0, b.z2 + r - pos.z],
+        ].sort((a, c) => Math.abs(a[0] + a[1]) - Math.abs(c[0] + c[1]));
+        pos.x += opts[0][0]; pos.z += opts[0][1];
       }
     }
-    pos.x = THREE.MathUtils.clamp(pos.x, -WALL.x, WALL.x);
-    pos.z = THREE.MathUtils.clamp(pos.z, -WALL.z, WALL.z);
+  }
+
+  // ¿un muro corta el segmento a-b? (Liang–Barsky en el plano XZ)
+  function wallBetween(a, b) {
+    const dx = b.x - a.x, dz = b.z - a.z;
+    for (const w of WALLS) {
+      let t0 = 0, t1 = 1, hit = true;
+      for (const [p, q] of [[-dx, a.x - w.x1], [dx, w.x2 - a.x], [-dz, a.z - w.z1], [dz, w.z2 - a.z]]) {
+        if (p === 0) { if (q < 0) { hit = false; break; } continue; }
+        const t = q / p;
+        if (p < 0) { if (t > t1) { hit = false; break; } if (t > t0) t0 = t; }
+        else { if (t < t0) { hit = false; break; } if (t < t1) t1 = t; }
+      }
+      if (hit) return true;
+    }
+    return false;
+  }
+
+  // zonas donde puede estar la cámara (con margen a los muros) y su techo
+  const CAM_ZONES = [
+    { x1: -ROOM.w / 2 + 0.25, x2: ROOM.w / 2 - 0.25, z1: -ROOM.d / 2 + 0.25, z2: ROOM.d / 2 - 0.25, h: ROOM.h - 0.2 },
+    { x1: -DOOR_HALF + 0.12, x2: DOOR_HALF - 0.12, z1: ROOM.d / 2 - 0.5, z2: ROOM.d / 2 + 0.5, h: 2.2 },
+    { x1: CORR.x1 + 0.25, x2: CORR.x2 - 0.25, z1: CORR.z1 + 0.25, z2: CORR.z2 + 0.25, h: CORR.h - 0.2 },
+    { x1: HALL.x1 + 0.25, x2: HALL.x2 - 0.25, z1: HALL.z1 + 0.25, z2: HALL.z2 - 0.25, h: HALL.h - 0.2 },
+  ];
+  function camZone(p) {
+    for (const z of CAM_ZONES) if (p.x >= z.x1 && p.x <= z.x2 && p.z >= z.z1 && p.z <= z.z2) return z;
+    return null;
   }
 
   // dos personajes no se atraviesan
@@ -680,13 +1222,16 @@ const Scene3D = (() => {
      ============================================================ */
   const SPAWN = {
     survivor: { pos: new THREE.Vector3(0.2, 0, 1.3), heading: Math.PI },
-    monster: { pos: new THREE.Vector3(1.6, 0, -2.6), heading: 0 },
+    monster: { pos: new THREE.Vector3(0, 0, 9.0), heading: Math.PI },   // en el pasillo
   };
+  // ronda del monstruo (modo un jugador): estudio → pasillo → gran salón → de regreso.
+  // Cada tramo es recto y libre de muros.
   const NPC_PATH = [
-    new THREE.Vector3(-0.5, 0, 0.4), new THREE.Vector3(2.6, 0, -2.4),
-    new THREE.Vector3(2.8, 0, 2.3), new THREE.Vector3(-2.8, 0, 1.6),
-    new THREE.Vector3(0.4, 0, -2.7), new THREE.Vector3(-0.3, 0, 2.6),
-  ];
+    [-0.5, 0.8], [2.6, -2.4], [2.6, 2.2], [0, 2.7], [0, 5.5], [0, 10.4],
+    [0, 13.0], [-1.2, 15.0], [0, 17.4], [2.4, 16.0], [0.8, 12.8], [0, 10.4],
+    [0, 5.5], [0, 2.7], [-2.8, 1.6],
+  ].map(([x, z]) => new THREE.Vector3(x, 0, z));
+  const NPC_START_WP = 13;   // desde el pasillo, entra al estudio
 
   let config = { mode: "solo", role: "survivor" };
   let modelsReady = false, loadingModels = null;
@@ -783,7 +1328,7 @@ const Scene3D = (() => {
       pos: s.pos.clone(), target: s.pos.clone(),
       heading: s.heading, targetHeading: s.heading,
       speed: 0, flash: null,
-      wp: 0, wait: 1.5,
+      wp: NPC_START_WP, wait: 1.5, chasing: false, stuck: 0,
     };
     if (role === "survivor") other.flash = makeFlashlight(ch.root, false);
     ch.root.position.copy(other.pos);
@@ -797,7 +1342,7 @@ const Scene3D = (() => {
   function refreshHud() {
     const surv = player.role === "survivor";
     setHud("objective-text", surv
-      ? "Explora el estudio. Que no te atrape."
+      ? "Explora la mansión. Que no te atrape."
       : "Caza al superviviente. Sigue la luz de su linterna.");
     setHud("hud-role", surv ? "Superviviente" : "Monstruo");
     const role = $("hud-role");
@@ -877,6 +1422,8 @@ const Scene3D = (() => {
   }
   function onNetState(msg) {
     if (config.mode !== "mp") return;
+    // si los modelos aún cargan, setupMatch() agregará al rival al terminar
+    if (!modelsReady) return;
     if (!other) {
       const peer = Net.info.peers.find((p) => p.id === msg.id);
       addOther(peer ? peer.role : (player.role === "survivor" ? "monster" : "survivor"), false);
@@ -890,7 +1437,7 @@ const Scene3D = (() => {
   function onPeerJoin(msg) {
     if (config.mode !== "mp") return;
     toast(msg.role === "monster" ? "El monstruo entró a la mansión." : "Un superviviente entró a la mansión.");
-    addOther(msg.role, false);
+    if (modelsReady) addOther(msg.role, false);
     updateNetHud();
   }
   function onPeerLeave(msg) {
@@ -920,6 +1467,7 @@ const Scene3D = (() => {
   /* ---------------- Actualización por cuadro ---------------- */
   const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _wish = new THREE.Vector3();
   const _target = new THREE.Vector3(), _camPos = new THREE.Vector3();
+  const _camStep = new THREE.Vector3(), _camTry = new THREE.Vector3();
 
   function angleLerp(a, b, t) {
     let d = ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
@@ -989,27 +1537,43 @@ const Scene3D = (() => {
     other.char.update(dt);
   }
 
-  // IA sencilla del monstruo en modo un jugador: ronda entre puntos y,
-  // si ve al superviviente cerca, se acerca despacio hasta quedarse mirándolo.
+  // punto de ronda más cercano que se vea sin muros de por medio
+  function nearestVisibleWp(pos) {
+    let best = other.wp, bestD = Infinity;
+    NPC_PATH.forEach((p, i) => {
+      const d = p.distanceTo(pos);
+      if (d < bestD && !wallBetween(pos, p)) { best = i; bestD = d; }
+    });
+    return best;
+  }
+
+  // IA sencilla del monstruo en modo un jugador: ronda por la mansión y,
+  // si ve al superviviente cerca (sin muros de por medio), se le acerca.
   function updateNpc(dt) {
     const toPlayer = player.pos.clone().sub(other.pos);
     const dist = toPlayer.length();
+    const sees = dist < 4.5 && !wallBetween(other.pos, player.pos);
     let goal = null, speed = 0;
 
-    if (dist < 4.2) {
-      if (dist > 1.1) { goal = player.pos; speed = 1.4; }
+    if (sees) {
+      other.chasing = true;
+      if (dist > 1.1) { goal = player.pos; speed = 1.5; }
       other.targetHeading = Math.atan2(toPlayer.x, toPlayer.z);
-    } else if (other.wait > 0) {
-      other.wait -= dt;
     } else {
-      goal = NPC_PATH[other.wp];
-      speed = 1.25;
-      if (other.pos.distanceTo(goal) < 0.35) {
-        other.wp = (other.wp + 1 + Math.floor(Math.random() * 2)) % NPC_PATH.length;
-        other.wait = 1 + Math.random() * 2.5;
-        goal = null; speed = 0;
+      if (other.chasing) { other.chasing = false; other.wp = nearestVisibleWp(other.pos); other.wait = 1.2; }
+      if (other.wait > 0) {
+        other.wait -= dt;
+      } else {
+        goal = NPC_PATH[other.wp];
+        speed = 1.25;
+        if (other.pos.distanceTo(goal) < 0.35) {
+          other.wp = (other.wp + 1) % NPC_PATH.length;
+          other.wait = Math.random() < 0.4 ? 1 + Math.random() * 2 : 0;
+          goal = null; speed = 0;
+        }
       }
     }
+    const before = other.pos.clone();
     if (goal) {
       const dir = goal.clone().sub(other.pos).setY(0);
       if (dir.lengthSq() > 1e-4) {
@@ -1019,6 +1583,11 @@ const Scene3D = (() => {
       }
     }
     collide(other.pos);
+    // si se atora contra un mueble, busca otro punto de ronda
+    if (goal && !sees) {
+      other.stuck = before.distanceTo(other.pos) < speed * dt * 0.3 ? other.stuck + dt : 0;
+      if (other.stuck > 1.5) { other.stuck = 0; other.wp = (nearestVisibleWp(other.pos) + 1) % NPC_PATH.length; }
+    }
     other.speed = THREE.MathUtils.lerp(other.speed, speed, 1 - Math.exp(-8 * dt));
     other.heading = angleLerp(other.heading, other.targetHeading, 1 - Math.exp(-6 * dt));
   }
@@ -1029,10 +1598,18 @@ const Scene3D = (() => {
     _fwd.set(-Math.sin(cam.yaw) * cp, Math.sin(cam.pitch), -Math.cos(cam.yaw) * cp);
     _right.set(Math.cos(cam.yaw), 0, -Math.sin(cam.yaw));
     _camPos.copy(_target).addScaledVector(_fwd, -cam.dist).addScaledVector(_right, 0.4);
-    // la cámara no atraviesa paredes, techo ni piso
-    _camPos.x = THREE.MathUtils.clamp(_camPos.x, -ROOM.w / 2 + 0.25, ROOM.w / 2 - 0.25);
-    _camPos.z = THREE.MathUtils.clamp(_camPos.z, -ROOM.d / 2 + 0.25, ROOM.d / 2 - 0.25);
-    _camPos.y = THREE.MathUtils.clamp(_camPos.y, 0.35, ROOM.h - 0.2);
+    // la cámara no atraviesa paredes, techo ni piso: avanza desde la cabeza
+    // del personaje hacia su posición ideal y se detiene antes de salir de la zona
+    _camStep.copy(_target);
+    for (let i = 1; i <= 16; i++) {
+      _camTry.lerpVectors(_target, _camPos, i / 16);
+      const z = camZone(_camTry);
+      if (!z) break;
+      _camTry.y = Math.min(_camTry.y, z.h);
+      _camStep.copy(_camTry);
+    }
+    _camPos.copy(_camStep);
+    _camPos.y = Math.max(_camPos.y, 0.35);
     camera.position.lerp(_camPos, 1 - Math.exp(-18 * dt));
 
     if (cam.shake > 0) {
@@ -1074,6 +1651,13 @@ const Scene3D = (() => {
       f.scale.y = 0.75 + Math.sin(t * 15 + f.position.x * 3) * 0.25;
       f.material.color.setHSL(0.09, 1, 0.55 + Math.random() * 0.12);
       f.rotation.z = Math.sin(t * 8 + f.position.z) * 0.15;
+    }
+    for (const f of flickers) {
+      // la araña tiembla suave; el foco del pasillo falla de vez en cuando
+      const k = f.soft ? 0.9 + Math.sin(t * 7) * 0.05 + Math.random() * 0.08
+                       : (Math.sin(t * 0.7) > 0.6 && Math.random() < 0.35 ? 0.05 : 1);
+      f.light.intensity = f.base * k;
+      if (f.bulb) f.bulb.visible = k > 0.5;
     }
     if (pendulum) pendulum.rotation.z = Math.sin(t * 1.6) * 0.12;
     if (chandelier) chandelier.rotation.z = Math.sin(t * 0.6) * 0.012;
@@ -1123,6 +1707,8 @@ const Scene3D = (() => {
     buildPaintings();
     buildChandelier();
     buildClutter();
+    buildCorridor();
+    buildHall();
     buildCobwebs();
     buildDust();
     buildLights();

@@ -30,7 +30,7 @@ Para probar en una sola computadora basta con abrir **dos pestañas o ventanas**
 
 | Modo | Cómo |
 |---|---|
-| Un jugador | Menú → **Jugar**. Eres el superviviente; el monstruo lo controla la computadora (ronda por el estudio y te acecha si te acercas). |
+| Un jugador | Menú → **Jugar**. Eres el superviviente; el monstruo lo controla la computadora (ronda por toda la mansión y te persigue si te ve). |
 | Multijugador | Menú → **Multijugador**. Uno pulsa **Crear sala** (será el **superviviente**) y le pasa el código de 4 letras al otro, que lo escribe en **Unirse** (será el **monstruo**). Al juntarse, los dos entran a la partida. |
 
 Controles: **WASD** moverse · **Shift** correr · **ratón** mirar (clic en la escena para
@@ -42,7 +42,7 @@ capturarlo) · **F** linterna (superviviente) / rugido (monstruo) · **ESC** pau
 |---|---|
 | 4 ejercicios realizados en clase (30) | Los entrega cada integrante (no forman parte de este repositorio). |
 | **Funcionamiento de modo multijugador** (50) | `server.js` (salas por código, máx. 2 jugadores, reenvío de estado) + `js/net.js` (cliente WebSocket). Cada jugador ve al otro moverse y animarse en tiempo real (15 actualizaciones/s con interpolación); los eventos de linterna y rugido también se sincronizan; avisos al entrar o salir el rival y ping en el HUD. |
-| **Modelos con texturas y animaciones cargados con WebGL** (20) | `js/characters.js`: modelos **GLTF/GLB** cargados con `GLTFLoader` y animados con `AnimationMixer` (idle / caminar / correr con transiciones suaves, velocidad de animación ajustada a la de movimiento). **Superviviente** = `Rogue_Hooded.glb`, personaje low-poly de KayKit con su textura (se le ocultan las armas y lleva una linterna en la mano). **Monstruo** = `Xbot.glb` convertido en demonio: piel carbonizada con grietas de lava (textura + mapa emisivo generados en canvas, que palpitan), cuernos, garras, púas en la espalda y ojos ardientes pegados a los huesos del esqueleto. El escenario conserva sus texturas y animaciones (fuego, péndulo, candelabro, polvo). |
+| **Modelos con texturas y animaciones cargados con WebGL** (20) | `js/characters.js`: modelos **GLTF/GLB** cargados con `GLTFLoader` y animados con `AnimationMixer` (idle / caminar / correr con transiciones suaves, velocidad de animación ajustada a la de movimiento). **Superviviente** = `Rogue_Hooded.glb`, personaje low-poly de KayKit con su textura (se le ocultan las armas y lleva una linterna en la mano). **Monstruo** = `Xbot.glb` convertido en una abominación: se deforma su esqueleto (torso enorme, brazos largos, manos gigantes y joroba, escalando y girando huesos encima de la animación) y se le pegan a los huesos cuernos de carnero, seis ojos, un hocico abierto con colmillos, costillas expuestas, púas de hueso y garras curvas. Piel de carne quemada con venas que laten (textura, mapa emisivo y mapa de relieve generados en canvas). El escenario conserva sus texturas y animaciones (fuego, péndulo, candelabros, foco que falla, polvo). |
 
 Extras que adelantan la entrega final: **colisiones** con paredes y mobiliario, entre
 los dos personajes, y de la cámara contra los muros. Linterna como **luz focal** con
@@ -67,8 +67,8 @@ Interfaz (la rúbrica del 1er avance no pedía 3D todavía):
   Se reemplazará por música/efectos reales más adelante.
 - **Almacenamiento local:** `js/settings.js` — la configuración se guarda en `localStorage`
   (adelanta el requisito de LocalStorage de la UA).
-- **Escenario 3D (WebGL / Three.js):** `js/scene3d.js` — el estudio de la Mansión
-  Ravenwood construido **solo con figuras básicas** (cajas, cilindros, planos, esferas,
+- **Escenario 3D (WebGL / Three.js):** `js/scene3d.js` — la Mansión Ravenwood (estudio →
+  pasillo → gran salón con comedor, piano, armaduras, escalera y ventanales) construida **solo con figuras básicas** (cajas, cilindros, planos, esferas,
   conos, toros) y texturas procedurales dibujadas en `<canvas>`. Iluminación ambiental +
   focal (chimenea, lámpara, velas) + luz de luna. En el 1er avance era solo una vista
   cinemática; desde el 2º avance se juega en tercera persona.

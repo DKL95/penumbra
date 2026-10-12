@@ -5,10 +5,12 @@
      animaciones Idle / Walking_A / Running_A. Se le ocultan las
      armas y se le pone una linterna en la mano.
    - Monstruo:      assets/models/Xbot.glb (animaciones idle /
-     walk / run) convertido en demonio: piel carbonizada con
-     grietas de lava (textura + mapa emisivo generados en
-     <canvas>), cuernos, garras, púas y ojos ardientes pegados
-     a los huesos del esqueleto.
+     walk / run) convertido en una abominación: se deforma su
+     esqueleto (torso enorme, brazos largos, manos gigantes,
+     joroba) y se le pegan a los huesos cuernos de carnero,
+     seis ojos, hocico con colmillos, costillas expuestas, púas
+     de hueso y garras. Piel de carne quemada con venas
+     (textura, mapa emisivo y de relieve generados en <canvas>).
    Se cargan con GLTFLoader (Three.js) y se animan con
    AnimationMixer, mezclando clips con crossFade.
    ========================================================= */
@@ -30,10 +32,15 @@ const DEFS = {
   },
   monster: {
     url: "assets/models/Xbot.glb",
-    height: 2.25,
+    height: 2.3,
     yaw: 0,
-    stretch: { x: 0.92, z: 0.92 },          // más alto y delgado
     clips: { idle: "idle", walk: "walk", run: "run" },
+    // deforma el esqueleto (escala uniforme por hueso): torso enorme,
+    // brazos largos, manos gigantes y cabeza pequeña
+    boneScale: { Spine1: 1.12, Spine2: 1.25, Neck: 0.68, ForeArm: 1.18, Hand: 1.35, UpLeg: 0.95 },
+    // joroba: giro extra (rad, eje X del hueso) sobre la animación
+    hunch: { Spine: 0.22, Spine1: 0.38, Spine2: 0.32, Neck: -0.5, Head: -0.38 },
+    armSpread: 0.4,                          // brazos colgando separados del cuerpo
     walkSpeed: 1.5, runSpeed: 4.3,
     clipWalkSpeed: 1.5, clipRunSpeed: 4.0,
   },
@@ -51,60 +58,75 @@ export function loadModels(onProgress) {
       .then(() => onProgress && onProgress(++done, kinds.length))));
 }
 
-/* ---------------- Materiales del demonio ---------------- */
-let demonMats = null;
-function demonMaterials() {
-  if (demonMats) return demonMats;
+/* ---------------- Materiales de la abominación ---------------- */
+let monsterMats = null;
+function monsterMaterials() {
+  if (monsterMats) return monsterMats;
   const S = 1024;
   const col = document.createElement("canvas");
   const emi = document.createElement("canvas");
-  col.width = col.height = emi.width = emi.height = S;
+  const bmp = document.createElement("canvas");
+  col.width = col.height = emi.width = emi.height = bmp.width = bmp.height = S;
   const x = col.getContext("2d");
   const e = emi.getContext("2d");
+  const b = bmp.getContext("2d");
 
-  // base: piel quemada, rojo sangre muy oscuro
-  x.fillStyle = "#3a0d0a"; x.fillRect(0, 0, S, S);
+  // base: carne quemada y podrida, gris pardo con zonas en carne viva
+  x.fillStyle = "#241a17"; x.fillRect(0, 0, S, S);
   e.fillStyle = "#000"; e.fillRect(0, 0, S, S);
-  for (let i = 0; i < 320; i++) {
-    const r = 10 + Math.random() * 80;
-    const px = Math.random() * S, py = Math.random() * S;
-    const g = x.createRadialGradient(px, py, 0, px, py, r);
-    const c = Math.random() < 0.55 ? "12,4,4" : Math.random() < 0.5 ? "92,22,14" : "60,14,10";
-    g.addColorStop(0, `rgba(${c},.6)`);
-    g.addColorStop(1, `rgba(${c},0)`);
-    x.fillStyle = g; x.fillRect(px - r, py - r, r * 2, r * 2);
+  b.fillStyle = "#808080"; b.fillRect(0, 0, S, S);
+  const blob = (ctx, px, py, r, c) => {
+    const g = ctx.createRadialGradient(px, py, 0, px, py, r);
+    g.addColorStop(0, c); g.addColorStop(1, c.replace(/[\d.]+\)$/, "0)"));
+    ctx.fillStyle = g; ctx.fillRect(px - r, py - r, r * 2, r * 2);
+  };
+  for (let i = 0; i < 420; i++) {
+    const r = 8 + Math.random() * 70, px = Math.random() * S, py = Math.random() * S;
+    const k = Math.random();
+    blob(x, px, py, r, k < 0.4 ? "rgba(10,7,6,.6)" : k < 0.7 ? "rgba(58,40,32,.55)" : k < 0.88 ? "rgba(70,74,58,.4)" : "rgba(110,22,16,.55)");
+    blob(b, px, py, r, k < 0.5 ? "rgba(20,20,20,.5)" : "rgba(230,230,230,.45)");
   }
-
-  // grietas de lava: se dibujan igual en color y en el mapa emisivo
-  function crack(px, py, ang, len, w, depth) {
+  // venas: oscuras en el color, apenas brasa en el emisivo
+  function vein(px, py, ang, len, w, depth) {
     for (let s = 0; s < len; s++) {
-      const nx = px + Math.cos(ang) * 14, ny = py + Math.sin(ang) * 14;
-      x.strokeStyle = "rgba(255,120,40,.9)"; x.lineWidth = w;
+      const nx = px + Math.cos(ang) * 12, ny = py + Math.sin(ang) * 12;
+      x.strokeStyle = "rgba(60,8,6,.85)"; x.lineWidth = w;
       x.beginPath(); x.moveTo(px, py); x.lineTo(nx, ny); x.stroke();
-      e.strokeStyle = "#ff5a14"; e.lineWidth = w * 1.6;
+      e.strokeStyle = "#b5300c"; e.lineWidth = w * 0.7;
       e.beginPath(); e.moveTo(px, py); e.lineTo(nx, ny); e.stroke();
-      e.strokeStyle = "#ffd27a"; e.lineWidth = Math.max(0.6, w * 0.4);
-      e.beginPath(); e.moveTo(px, py); e.lineTo(nx, ny); e.stroke();
+      b.strokeStyle = "rgba(255,255,255,.8)"; b.lineWidth = w * 1.4;
+      b.beginPath(); b.moveTo(px, py); b.lineTo(nx, ny); b.stroke();
       px = nx; py = ny;
-      ang += (Math.random() - 0.5) * 0.8;
-      w *= 0.93;
-      if (depth < 2 && Math.random() < 0.12) crack(px, py, ang + (Math.random() - 0.5) * 2, len / 2, w, depth + 1);
+      ang += (Math.random() - 0.5) * 1.1;
+      w *= 0.9;
+      if (depth < 2 && Math.random() < 0.18) vein(px, py, ang + (Math.random() - 0.5) * 2.4, len / 2, w, depth + 1);
     }
   }
-  x.lineCap = e.lineCap = "round";
-  for (let i = 0; i < 46; i++) crack(Math.random() * S, Math.random() * S, Math.random() * Math.PI * 2, 10 + Math.random() * 14, 2 + Math.random() * 3, 0);
-
-  // costras negras encima
-  for (let i = 0; i < 90; i++) {
-    const px = Math.random() * S, py = Math.random() * S, r = 6 + Math.random() * 22;
-    x.fillStyle = "rgba(6,2,2,.7)";
-    x.beginPath(); x.ellipse(px, py, r, r * (0.4 + Math.random() * 0.6), Math.random() * 3, 0, Math.PI * 2); x.fill();
+  x.lineCap = e.lineCap = b.lineCap = "round";
+  for (let i = 0; i < 40; i++) vein(Math.random() * S, Math.random() * S, Math.random() * Math.PI * 2, 8 + Math.random() * 12, 1.5 + Math.random() * 2.5, 0);
+  // cicatrices y llagas
+  for (let i = 0; i < 26; i++) {
+    const px = Math.random() * S, py = Math.random() * S, l = 30 + Math.random() * 70, a = Math.random() * Math.PI;
+    x.strokeStyle = "rgba(120,60,50,.7)"; x.lineWidth = 3;
+    x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(a) * l, py + Math.sin(a) * l); x.stroke();
+    b.strokeStyle = "rgba(0,0,0,.9)"; b.lineWidth = 4;
+    b.beginPath(); b.moveTo(px, py); b.lineTo(px + Math.cos(a) * l, py + Math.sin(a) * l); b.stroke();
+    for (let k = 0; k < l; k += 9) {
+      const sx = px + Math.cos(a) * k, sy = py + Math.sin(a) * k;
+      x.beginPath(); x.moveTo(sx - Math.sin(a) * 6, sy + Math.cos(a) * 6); x.lineTo(sx + Math.sin(a) * 6, sy - Math.cos(a) * 6); x.stroke();
+    }
+  }
+  for (let i = 0; i < 30; i++) {
+    const px = Math.random() * S, py = Math.random() * S, r = 5 + Math.random() * 14;
+    blob(x, px, py, r * 1.6, "rgba(140,30,20,.8)");
+    blob(e, px, py, r, "rgba(120,30,6,.9)");
+    blob(b, px, py, r, "rgba(0,0,0,.9)");
   }
   // grano
   const img = x.getImageData(0, 0, S, S), d = img.data;
   for (let i = 0; i < d.length; i += 4) {
-    const n = (Math.random() - 0.5) * 22;
-    d[i] += n; d[i + 1] += n * 0.5; d[i + 2] += n * 0.5;
+    const n = (Math.random() - 0.5) * 18;
+    d[i] += n; d[i + 1] += n * 0.8; d[i + 2] += n * 0.7;
   }
   x.putImageData(img, 0, 0);
 
@@ -116,24 +138,24 @@ function demonMaterials() {
     t.anisotropy = 4;
     return t;
   };
-  const skin = mk(col, true), glow = mk(emi, true);
 
-  demonMats = {
-    surface: new THREE.MeshStandardMaterial({
-      map: skin, emissiveMap: glow, emissive: 0xff3a0a, emissiveIntensity: 1.4,
-      roughness: 0.7, metalness: 0.1,
+  monsterMats = {
+    flesh: new THREE.MeshStandardMaterial({
+      map: mk(col, true), emissiveMap: mk(emi, true), emissive: 0xff4a10, emissiveIntensity: 0.6,
+      bumpMap: mk(bmp, false), bumpScale: 3, roughness: 0.62, metalness: 0.05,
     }),
-    joints: new THREE.MeshStandardMaterial({ color: 0x120606, roughness: 0.32, metalness: 0.4 }),
-    horn: new THREE.MeshStandardMaterial({ color: 0x1a1210, roughness: 0.38, metalness: 0.25 }),
-    hornTip: new THREE.MeshStandardMaterial({ color: 0x5a0f08, roughness: 0.3, emissive: 0x3a0500 }),
-    spike: new THREE.MeshStandardMaterial({ color: 0x2a0806, roughness: 0.35, metalness: 0.2, emissive: 0x6a0e02, emissiveIntensity: 0.8 }),
-    eye: new THREE.MeshBasicMaterial({ color: 0xffc23a }),
-    eyeRim: new THREE.MeshBasicMaterial({ color: 0xff2a00 }),
+    joints: new THREE.MeshStandardMaterial({ color: 0x1a0d0a, roughness: 0.5 }),
+    bone: new THREE.MeshStandardMaterial({ color: 0xa89878, roughness: 0.7, bumpMap: mk(bmp, false), bumpScale: 1.5 }),
+    horn: new THREE.MeshStandardMaterial({ color: 0x17110e, roughness: 0.45, metalness: 0.15 }),
+    teeth: new THREE.MeshStandardMaterial({ color: 0xd9cca6, roughness: 0.35 }),
+    maw: new THREE.MeshStandardMaterial({ color: 0x2a0303, roughness: 0.4, emissive: 0x5a0800, emissiveIntensity: 0.8 }),
+    eye: new THREE.MeshBasicMaterial({ color: 0xffd04a }),
+    eyeRim: new THREE.MeshBasicMaterial({ color: 0xff2200 }),
   };
-  return demonMats;
+  return monsterMats;
 }
 
-// cuerno curvo: tubo a lo largo de una curva que se afila hasta la punta
+// cuerno / garra curva: tubo a lo largo de una curva que se afila hasta la punta
 function hornGeometry(curve, r0, tubular = 18, radial = 10) {
   const g = new THREE.TubeGeometry(curve, tubular, r0, radial, false);
   const pos = g.attributes.position, c = new THREE.Vector3(), v = new THREE.Vector3();
@@ -150,6 +172,7 @@ function hornGeometry(curve, r0, tubular = 18, radial = 10) {
   g.computeVertexNormals();
   return g;
 }
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
 /* ---------------- Linterna (malla) para la mano del superviviente ---------------- */
 function flashlightMesh() {
@@ -193,11 +216,23 @@ export class Character {
       o.receiveShadow = true;
       o.frustumCulled = false; // las mallas con skinning a veces se recortan mal
       if (kind === "monster") {
-        const m = demonMaterials();
-        o.material = /joint/i.test(o.name) ? m.joints : m.surface;
+        const m = monsterMaterials();
+        o.material = /joint/i.test(o.name) ? m.joints : m.flesh;
       }
     });
     hidden.forEach((o) => { o.visible = false; });
+
+    // huesos por nombre sin prefijo (mixamorig:Spine1 -> Spine1)
+    this.bones = {};
+    this.model.traverse((o) => { if (o.isBone) this.bones[o.name.replace(/^mixamorig:?/, "")] = o; });
+    const sameBones = (key) => [this.bones[key], this.bones["Left" + key], this.bones["Right" + key]].filter(Boolean);
+    for (const [key, k] of Object.entries(def.boneScale || {})) sameBones(key).forEach((b) => b.scale.setScalar(k));
+    this.hunch = [];
+    for (const [key, a] of Object.entries(def.hunch || {}))
+      sameBones(key).forEach((b) => this.hunch.push([b, new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), a)]));
+    if (def.armSpread)
+      for (const [b, side] of [[this.bones.LeftArm, 1], [this.bones.RightArm, -1]])
+        if (b) this.hunch.push([b, new THREE.Quaternion().setFromAxisAngle(V(0, 0, 1), side * def.armSpread)]);
 
     // escala a la altura deseada (sin contar lo oculto)
     this.model.updateMatrixWorld(true);
@@ -207,18 +242,22 @@ export class Character {
     });
     const h = box.max.y - box.min.y || 1;
     const s = def.height / h;
-    this.pivot.scale.set(s * (def.stretch?.x || 1), s, s * (def.stretch?.z || 1));
+    this.pivot.scale.setScalar(s);
     this.pivot.position.y = -box.min.y * s;
     this.root.updateMatrixWorld(true);
 
-    if (kind === "monster") this.addDemonParts();
+    if (kind === "monster") this.addMonsterParts();
     if (kind === "survivor") this.addFlashlight();
 
-    // animaciones
+    // animaciones (si se deforma el esqueleto, sin las pistas de escala de los clips)
+    if (def.boneScale && !gltf.clipsNoScale)
+      gltf.clipsNoScale = gltf.animations.map((c) =>
+        new THREE.AnimationClip(c.name, c.duration, c.tracks.filter((t) => !t.name.endsWith(".scale"))));
+    const clips = def.boneScale ? gltf.clipsNoScale : gltf.animations;
     this.mixer = new THREE.AnimationMixer(this.model);
     this.actions = {};
     for (const [key, name] of Object.entries(def.clips)) {
-      const clip = THREE.AnimationClip.findByName(gltf.animations, name);
+      const clip = THREE.AnimationClip.findByName(clips, name);
       if (clip) this.actions[key] = this.mixer.clipAction(clip);
     }
     this.current = null;
@@ -244,65 +283,110 @@ export class Character {
     return mesh;
   }
 
-  addDemonParts() {
-    const m = demonMaterials();
-    const head = this.bone(/head$/i);
+  addMonsterParts() {
+    const m = monsterMaterials();
+    const B = this.bones;
+    const head = B.Head;
 
-    // cuernos: salen de la frente, se abren y se curvan hacia atrás
+    // cuernos de carnero: salen de las sienes, se enroscan hacia atrás y abajo
     for (const side of [-1, 1]) {
-      const curve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(side * 0.08, 0.08, 0.02),
-        new THREE.Vector3(side * 0.17, 0.18, -0.04),
-        new THREE.Vector3(side * 0.19, 0.3, -0.15),
-        new THREE.Vector3(side * 0.13, 0.37, -0.26),
+      const ram = new THREE.CatmullRomCurve3([
+        V(0, 0, 0), V(side * 0.1, 0.08, -0.03), V(side * 0.22, 0.06, -0.13),
+        V(side * 0.27, -0.06, -0.09), V(side * 0.22, -0.13, 0.04), V(side * 0.16, -0.1, 0.1),
       ]);
-      const horn = new THREE.Mesh(hornGeometry(curve, 0.042), m.horn);
-      this.attach(head, horn, side * 0.055, 0.15, 0.05);
-      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.008, 6, 6), m.hornTip);
-      tip.position.copy(curve.getPointAt(1));
-      horn.add(tip);
+      this.attach(head, new THREE.Mesh(hornGeometry(ram, 0.05, 28), m.horn), side * 0.07, 0.17, 0.0);
+      // cuerno recto de la frente, torcido hacia adelante
+      const spike = new THREE.CatmullRomCurve3([
+        V(0, 0, 0), V(side * 0.03, 0.12, 0.04), V(side * 0.06, 0.26, 0.02), V(side * 0.04, 0.38, -0.08),
+      ]);
+      this.attach(head, new THREE.Mesh(hornGeometry(spike, 0.03), m.horn), side * 0.04, 0.2, 0.07);
     }
 
-    // ojos ardientes: núcleo amarillo con halo rojo
+    // seis ojos sin párpado, de distinto tamaño
+    for (const [x, y, r] of [[0.045, 0.11, 0.022], [0.075, 0.145, 0.014], [0.03, 0.155, 0.011]]) {
+      for (const side of [-1, 1]) {
+        const eye = new THREE.Group();
+        const rim = new THREE.Mesh(new THREE.SphereGeometry(r * 1.45, 10, 10), m.eyeRim);
+        rim.scale.set(1, 0.75, 0.55);
+        eye.add(rim, new THREE.Mesh(new THREE.SphereGeometry(r, 10, 10), m.eye));
+        this.attach(head, eye, side * x, y, 0.16 - Math.abs(x) * 0.25);
+      }
+    }
+    this.eyeLight = new THREE.PointLight(0xff3a10, 0.35, 1.8, 2);
+    this.attach(head, this.eyeLight, 0, 0.12, 0.45);
+
+    // hocico abierto: garganta roja, mandíbula colgando y colmillos
+    const fangGeo = new THREE.ConeGeometry(0.011, 0.07, 6).translate(0, -0.035, 0);
+    const maw = new THREE.Mesh(new THREE.SphereGeometry(0.08, 14, 12), m.maw);
+    maw.scale.set(1.1, 0.7, 0.8);
+    this.attach(head, maw, 0, 0.03, 0.12);
+    const upper = new THREE.Group();
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 8 - 0.5) * 2.2;
+      const f = new THREE.Mesh(fangGeo, m.teeth);
+      f.position.set(Math.sin(a) * 0.085, 0, Math.cos(a) * 0.075);
+      f.scale.setScalar(i === 1 || i === 7 ? 1.8 : 0.8 + Math.random() * 0.5);
+      upper.add(f);
+    }
+    this.attach(head, upper, 0, 0.055, 0.1);
+    const jaw = new THREE.Group();
+    const jawBone = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.035, 0.19).translate(0, 0, 0.08), m.flesh);
+    jaw.add(jawBone);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 7 - 0.5) * 2.0;
+      const f = new THREE.Mesh(fangGeo, m.teeth);
+      f.rotation.x = Math.PI;
+      f.position.set(Math.sin(a) * 0.075, 0.015, 0.06 + Math.cos(a) * 0.1);
+      f.scale.setScalar(i === 0 || i === 7 ? 1.6 : 0.7 + Math.random() * 0.5);
+      jaw.add(f);
+    }
+    jaw.rotation.x = 0.55;  // abierta
+    this.jaw = this.attach(head, jaw, 0, 0.0, 0.05);
+
+    // costillas expuestas sobre el pecho
+    const ribGeo = (r) => new THREE.TorusGeometry(r, 0.012, 6, 20, 1.15)
+      .rotateZ(Math.PI / 2 - 1.15 - 0.08).rotateX(Math.PI / 2).scale(1.25, 1, 1);
+    const ribs = (bone, list) => list.forEach(([y, r, z]) => {
+      for (const side of [-1, 1]) {
+        const rib = new THREE.Mesh(ribGeo(r), m.bone);
+        rib.scale.x = side;
+        this.attach(bone, rib, 0, y, z);
+      }
+    });
+    ribs(B.Spine2, [[0.04, 0.175, 0.01], [0.11, 0.18, 0.01]]);
+    ribs(B.Spine1, [[0.04, 0.165, 0.0], [0.11, 0.17, 0.0]]);
+    this.attach(B.Spine2, new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.26, 0.02), m.bone), 0, 0.02, 0.16);
+
+    // púas de hueso a lo largo de la columna y en los hombros
+    const spikeGeo = new THREE.ConeGeometry(0.05, 0.34, 7).translate(0, 0.17, 0);
+    for (const [bone, list] of [
+      [B.Neck, [[0.02, -0.08, 0.6]]],
+      [B.Spine2, [[0.18, -0.16, 1], [0.08, -0.17, 1.15]]],
+      [B.Spine1, [[0.12, -0.16, 0.95], [0.02, -0.15, 0.8]]],
+      [B.Spine, [[0.06, -0.14, 0.65]]],
+    ]) list.forEach(([y, z, k]) => {
+      const sp = new THREE.Mesh(spikeGeo, m.bone);
+      sp.rotation.x = -Math.PI / 2 - 0.65;
+      sp.scale.setScalar(k);
+      this.attach(bone, sp, 0, y, z);
+    });
     for (const side of [-1, 1]) {
-      const eye = new THREE.Group();
-      const core = new THREE.Mesh(new THREE.SphereGeometry(0.018, 10, 10), m.eye);
-      const rim = new THREE.Mesh(new THREE.SphereGeometry(0.028, 10, 10), m.eyeRim);
-      rim.scale.set(1.25, 0.6, 0.5);
-      eye.add(rim, core);
-      eye.rotation.z = side * -0.35;   // ojos rasgados hacia arriba
-      this.attach(head, eye, side * 0.042, 0.1, 0.165);
-    }
-    this.eyeLight = new THREE.PointLight(0xff4a10, 0.5, 2.2, 2);
-    this.attach(head, this.eyeLight, 0, 0.1, 0.45);
-
-    // púas en la espalda
-    // la base del cono en el origen, para que la púa salga de la piel
-    const spikeGeo = new THREE.ConeGeometry(0.04, 0.24, 6).translate(0, 0.12, 0);
-    for (const [re, list] of [
-      [/spine2$/i, [[0.03, -0.15], [0.14, -0.14]]],
-      [/spine1$/i, [[0.05, -0.15]]],
-      [/spine$/i, [[0.05, -0.14]]],
-    ]) {
-      const b = this.bone(re);
-      list.forEach(([y, z], i) => {
-        const sp = new THREE.Mesh(spikeGeo, m.spike);
-        sp.rotation.x = -Math.PI / 2 - 0.5;   // hacia atrás y un poco arriba
-        sp.scale.setScalar(1 - i * 0.15);
-        this.attach(b, sp, 0, y, z);
+      [[0.16, 0.24, 0.9, 0.35], [0.21, 0.2, 0.7, 0.7], [0.12, 0.27, 0.6, 0.1]].forEach(([x, y, k, tilt]) => {
+        const sp = new THREE.Mesh(spikeGeo, m.bone);
+        sp.rotation.set(-0.3, 0, -side * tilt);
+        sp.scale.setScalar(k);
+        this.attach(B.Spine2, sp, side * x, y, -0.04);
       });
     }
 
-    // garras: tres por mano, a lo largo del eje de los dedos
-    const clawGeo = new THREE.ConeGeometry(0.014, 0.15, 6).translate(0, 0.075, 0);
-    for (const [re, dir] of [[/lefthand$/i, 1], [/righthand$/i, -1]]) {
-      const hand = this.bone(re);
-      [-0.022, 0, 0.022].forEach((z) => {
-        const c = new THREE.Mesh(clawGeo, m.spike);
-        c.rotation.z = -dir * Math.PI / 2;      // apuntar hacia los dedos (±X local)
-        c.rotation.y = z * 4;
-        this.attach(hand, c, dir * 0.15, -0.01, z);
+    // garras largas y curvas: cuatro por mano, siguiendo los dedos
+    for (const [hand, dir] of [[B.LeftHand, 1], [B.RightHand, -1]]) {
+      [-0.03, -0.01, 0.01, 0.03].forEach((z, i) => {
+        const len = i === 0 ? 0.16 : 0.24;
+        const curve = new THREE.CatmullRomCurve3([V(0, 0, 0), V(dir * len * 0.5, -0.02, 0), V(dir * len, -0.08, 0)]);
+        const c = new THREE.Mesh(hornGeometry(curve, 0.014, 10, 6), m.horn);
+        c.rotation.y = z * 5;
+        this.attach(hand, c, dir * 0.12, -0.01, z);
       });
     }
   }
@@ -340,11 +424,14 @@ export class Character {
   update(dt) {
     this.mixer.update(dt);
     this.time += dt;
+    // joroba encima de la pose del clip
+    for (const [b, q] of this.hunch) b.quaternion.multiply(q);
     if (this.kind === "monster") {
-      // la lava "respira" y los ojos titilan
+      // las venas laten, los ojos titilan y la mandíbula tiembla
       const pulse = 0.5 + 0.5 * Math.sin(this.time * 2.2);
-      demonMaterials().surface.emissiveIntensity = 0.9 + pulse * 1.1;
-      if (this.eyeLight) this.eyeLight.intensity = 0.4 + pulse * 0.3 + Math.random() * 0.1;
+      monsterMaterials().flesh.emissiveIntensity = 0.35 + pulse * 0.5;
+      if (this.eyeLight) this.eyeLight.intensity = 0.25 + pulse * 0.2 + Math.random() * 0.08;
+      if (this.jaw) this.jaw.rotation.x = 0.5 + Math.sin(this.time * 9) * 0.04 + pulse * 0.12;
     }
   }
 
