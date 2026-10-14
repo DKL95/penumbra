@@ -42,7 +42,7 @@ capturarlo) · **F** linterna (superviviente) / rugido (monstruo) · **ESC** pau
 |---|---|
 | 4 ejercicios realizados en clase (30) | Los entrega cada integrante (no forman parte de este repositorio). |
 | **Funcionamiento de modo multijugador** (50) | `server.js` (salas por código, máx. 2 jugadores, reenvío de estado) + `js/net.js` (cliente WebSocket). Cada jugador ve al otro moverse y animarse en tiempo real (15 actualizaciones/s con interpolación); los eventos de linterna y rugido también se sincronizan; avisos al entrar o salir el rival y ping en el HUD. |
-| **Modelos con texturas y animaciones cargados con WebGL** (20) | `js/characters.js`: modelos **GLTF/GLB** cargados con `GLTFLoader` y animados con `AnimationMixer` (idle / caminar / correr con transiciones suaves, velocidad de animación ajustada a la de movimiento). **Superviviente** = `Rogue_Hooded.glb`, personaje low-poly de KayKit con su textura (se le ocultan las armas y lleva una linterna en la mano). **Monstruo** = `Xbot.glb` convertido en una abominación: se deforma su esqueleto (torso enorme, brazos largos, manos gigantes y joroba, escalando y girando huesos encima de la animación) y se le pegan a los huesos cuernos de carnero, seis ojos, un hocico abierto con colmillos, costillas expuestas, púas de hueso y garras curvas. Piel de carne quemada con venas que laten (textura, mapa emisivo y mapa de relieve generados en canvas). El escenario conserva sus texturas y animaciones (fuego, péndulo, candelabros, foco que falla, polvo). |
+| **Modelos con texturas y animaciones cargados con WebGL** (20) | `js/characters.js`: modelos **GLTF/GLB** cargados con `GLTFLoader` y animados con `AnimationMixer` (idle / caminar / correr con transiciones suaves, velocidad de animación ajustada a la de movimiento). **Superviviente** = `Rogue_Hooded.glb`, personaje low-poly de KayKit con su textura (se le ocultan las armas y lleva una linterna en la mano). **Monstruo** = figura alta y delgada tipo Slenderman, toda negra, modelada por nosotros con primitivas de Three.js (cilindros, cajas y esferas) organizadas en una jerarquía de pivotes (cadera/rodilla, hombro/codo) y animada por código: la caminata/carrera usa senos sincronizados con la velocidad y, quieto, respira y ladea la cabeza. El escenario conserva sus texturas y animaciones (fuego, péndulo, candelabros, foco que falla, polvo). |
 
 Extras que adelantan la entrega final: **colisiones** con paredes y mobiliario, entre
 los dos personajes, y de la cámara contra los muros. Linterna como **luz focal** con
@@ -91,7 +91,6 @@ js/lib/three.module.min.js         Three.js r160 (vendorizado, offline)
 js/lib/addons/loaders/GLTFLoader.js   addon oficial de Three.js r160
 js/lib/addons/utils/*.js              BufferGeometryUtils y SkeletonUtils (r160)
 assets/models/Rogue_Hooded.glb  superviviente (KayKit Adventurers, Kay Lousberg, CC0)
-assets/models/Xbot.glb     monstruo (ejemplos oficiales de Three.js, origen Mixamo)
 assets/scene-mansion.svg
 ```
 
@@ -105,4 +104,5 @@ assets/scene-mansion.svg
 
 - **Superviviente:** *KayKit — Adventurers Character Pack 1.0* de Kay Lousberg
   (<https://kaylousberg.com>), licencia CC0.
-- **Monstruo (base):** `Xbot.glb` de los ejemplos oficiales de Three.js (origen Mixamo).
+- **Monstruo:** figura tipo Slenderman modelada por el equipo con primitivas de Three.js
+  y animada por código (`js/characters.js`).
