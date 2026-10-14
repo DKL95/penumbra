@@ -114,6 +114,7 @@ wss.on("connection", (ws, req) => {
         const code = String(msg.code || "").toUpperCase();
         const room = rooms.get(code);
         if (!room) return send(ws, { t: "error", msg: `No existe la partida ${code}.` });
+        if (ws.room === code) return send(ws, { t: "error", msg: "Ya estás en esta partida." });
         if (room.players.size >= 2) return send(ws, { t: "error", msg: "La partida ya está llena." });
         if (ws.room) leaveRoom(ws);
 

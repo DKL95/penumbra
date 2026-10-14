@@ -15,7 +15,7 @@
    ========================================================= */
 
 import * as THREE from "three";
-import { Character, loadModels } from "./characters.js";
+import { createCharacter, loadModels } from "./characters.js";
 
 const Scene3D = (() => {
   let renderer, scene, camera, clock;
@@ -1279,7 +1279,7 @@ const Scene3D = (() => {
   }
 
   function spawnCharacter(role) {
-    const ch = new Character(role);
+    const ch = createCharacter(role);
     scene.add(ch.root);
     return ch;
   }
