@@ -89,8 +89,18 @@ js/audio.js              audio procedural (Web Audio API)
 js/settings.js           configuración persistente (localStorage)
 js/lib/three.module.min.js         Three.js r160 (vendorizado, offline)
 js/lib/addons/loaders/GLTFLoader.js   addon oficial de Three.js r160
+js/lib/addons/loaders/OBJLoader.js    addon oficial de Three.js r160 (modelos .obj)
+js/lib/addons/loaders/MTLLoader.js    addon oficial de Three.js r160 (materiales .mtl)
+js/lib/addons/loaders/ColladaLoader.js  addon oficial de Three.js r160 (modelos .dae)
+js/lib/addons/loaders/TGALoader.js    addon oficial de Three.js r160 (lo usa ColladaLoader)
 js/lib/addons/utils/*.js              BufferGeometryUtils y SkeletonUtils (r160)
 assets/models/Rogue_Hooded.glb  superviviente (KayKit Adventurers, Kay Lousberg, CC0)
+assets/models/lampara/          lámpara de bola (OBJ + MTL, Avonni Lighting)
+assets/models/album/            álbum "Scrapbook" (OBJ + MTL + PNG)
+assets/models/libros/           libro "Doom Book" (OBJ + MTL + PNG)
+assets/models/libro-rojo/       libro rojo (OBJ + MTL + PNG)
+assets/models/banana/           racimo de plátanos (OBJ + MTL + PNG)
+assets/models/arana/            araña con esqueleto (Collada .dae + PNG)
 assets/scene-mansion.svg
 ```
 
@@ -106,3 +116,14 @@ assets/scene-mansion.svg
   (<https://kaylousberg.com>), licencia CC0.
 - **Monstruo:** figura tipo Slenderman modelada por el equipo con primitivas de Three.js
   y animada por código (`js/characters.js`).
+- **Lámpara de bola:** modelo OBJ + MTL de Avonni Lighting (<http://www.avonni.com>),
+  cargado con `OBJLoader` + `MTLLoader` y colocado sobre las cajas de la esquina del
+  estudio (`buildBallLamp` en `js/scene3d.js`).
+- **Utilería del estudio** (`buildProps` en `js/scene3d.js`, cargada con `OBJLoader` + `MTLLoader`):
+  álbum *Scrapbook*, *Doom Book* y libro rojo de *Resident Evil: Deadly Silence* (DS, Capcom) y
+  racimo de plátanos de *Let's Go Island: Lost on the Island of Tropics* (Arcade, Sega).
+- **Araña:** de *Seaman* (Dreamcast, Sega/Vivarium), Collada con esqueleto cargada con
+  `ColladaLoader`; trepa por la pared del pasillo y sus patas se animan por código rotando
+  los huesos (`buildSpider` / `updateSpider` en `js/scene3d.js`).
+- Los modelos de juegos comerciales se obtuvieron de The Models Resource y se usan solo con
+  fines académicos; sus derechos pertenecen a sus respectivas compañías.

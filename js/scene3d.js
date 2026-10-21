@@ -15,6 +15,9 @@
    ========================================================= */
 
 import * as THREE from "three";
+import { OBJLoader } from "./lib/addons/loaders/OBJLoader.js";
+import { MTLLoader } from "./lib/addons/loaders/MTLLoader.js";
+import { ColladaLoader } from "./lib/addons/loaders/ColladaLoader.js";
 import { createCharacter, loadModels } from "./characters.js";
 
 const Scene3D = (() => {
@@ -23,6 +26,7 @@ const Scene3D = (() => {
   let fireLight, flashSweep;
   const flames = [];
   let pendulum = null, chandelier = null, dust = null;
+  let spider = null;         // araña Collada que trepa en el pasillo
 
   const ROOM = { w: 9, d: 7, h: 3.4 };                          // estudio (centro en el origen)
   const DOOR_HALF = 0.67;                                        // medio ancho del hueco de la puerta
@@ -621,6 +625,125 @@ const Scene3D = (() => {
     box(0.5, 0.72, 0.08, M.woodDark, cx, 0.86, cz - 0.21);
     for (const sx of [-0.2, 0.2]) for (const sz of [-0.2, 0.2])
       cyl(0.03, 0.03, 0.5, M.woodDark, cx + sx, 0.25, cz + sz);
+  }
+
+  /* ============================================================
+     MODELOS EXTERNOS: OBJ + MTL y Collada (assets/models/*)
+     ============================================================ */
+  const MODELS = "assets/models/";
+
+  function loadObj(dir, name) {
+    return new MTLLoader().setPath(MODELS + dir).loadAsync(name + ".mtl").then((mtl) => {
+      mtl.preload();
+      return new OBJLoader().setMaterials(mtl).setPath(MODELS + dir).loadAsync(name + ".obj");
+    }).then((obj) => {
+      obj.traverse((o) => {
+        if (!o.isMesh) return;
+        [].concat(o.material).forEach((m) => {
+          // los MTL de Resident Evil usan la misma textura como map_d: se recorta por alfa
+          if (m.alphaMap) Object.assign(m, { alphaMap: null, transparent: false, alphaTest: 0.5 });
+        });
+        o.castShadow = o.receiveShadow = true;
+      });
+      return obj;
+    });
+  }
+
+  // centra el modelo sobre su base, lo escala a `size` m en su eje más largo y lo coloca
+  function placeModel(obj, size, x, y, z, ry = 0) {
+    const bb = new THREE.Box3().setFromObject(obj);
+    const dim = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
+    obj.position.set(-c.x, -bb.min.y, -c.z);
+    const pivot = new THREE.Group();
+    pivot.add(obj);
+    pivot.scale.setScalar(size / Math.max(dim.x, dim.y, dim.z));
+    pivot.position.set(x, y, z);
+    pivot.rotation.y = ry;
+    scene.add(pivot);
+    return pivot;
+  }
+
+  const loadFail = (what) => (err) => console.error(`[PENUMBRA] No se pudo cargar ${what}:`, err);
+
+  function buildBallLamp() {
+    // lámpara de bola apoyada sobre la caja de arriba de la esquina (ver buildClutter)
+    const x = -ROOM.w / 2 + 1.1, z = -ROOM.d / 2 + 0.85, y = 1.175, H = 0.5;
+    const light = new THREE.PointLight(0xffc88a, 0.9, 5, 2);
+    light.position.set(x, y + H * 0.3, z);
+    scene.add(light);
+    flickers.push({ light, base: 0.9, soft: true });
+
+    loadObj("lampara/", "lamparabolita").then((obj) => {
+      obj.traverse((o) => {
+        if (!o.isMesh) return;
+        [].concat(o.material).forEach((m) => {
+          if (m.name === "Cam") {
+            // el cristal de la bola brilla con la luz de dentro
+            Object.assign(m, { transparent: true, opacity: 0.85 });
+            m.emissive.set(0xffb874); m.emissiveIntensity = 0.9;
+          } else {
+            m.color.set(0x8a6a3a); m.specular.set(0x332211); m.shininess = 40;  // latón envejecido
+          }
+        });
+      });
+      placeModel(obj, H, x, y, z, -0.4);   // alineada con la caja
+    }).catch(loadFail("la lámpara"));
+  }
+
+  function buildProps() {
+    // escritorio del estudio (ver buildDesk): álbum sobre los papeles y un racimo de plátanos
+    const dx = -1.5, dz = -1.1, top = 0.83;
+    loadObj("album/", "REDS_scrapbook")
+      .then((o) => placeModel(o, 0.3, dx - 0.4, top + 0.022, dz + 0.1, 0.2)).catch(loadFail("el álbum"));
+    loadObj("banana/", "io_food_banana_big")
+      .then((o) => placeModel(o, 0.2, dx + 0.35, top, dz + 0.22, -0.6)).catch(loadFail("los plátanos"));
+    // libro tirado en el piso, entre el librero y la chimenea
+    loadObj("libros/", "REDS_book3p")
+      .then((o) => placeModel(o, 0.32, 3.75, 0, -0.9, 0.5)).catch(loadFail("el libro"));
+    // libro rojo de pie en la mesita de la vela, con el lomo hacia el cuarto
+    const tx = 1.95, tz = ROOM.d / 2 - 0.65;
+    loadObj("libro-rojo/", "REDS_redbookv")
+      .then((o) => placeModel(o, 0.25, tx + 0.06, 0.75, tz - 0.12, -Math.PI / 2)).catch(loadFail("el libro rojo"));
+  }
+
+  function buildSpider() {
+    // araña (Collada con esqueleto): trepa por la pared oeste del pasillo
+    // subiendo y bajando; las patas se animan por código rotando sus huesos
+    new ColladaLoader().loadAsync(MODELS + "arana/SP_HOME.dae").then((dae) => {
+      const model = placeModel(dae.scene, 0.35, 0, 0, 0);
+      const crawler = new THREE.Group();
+      crawler.add(model);
+      scene.add(crawler);
+      // cada pata cuelga de bone002 con 5 huesos: bone007, bone012 … bone042
+      const legs = [];
+      for (let k = 0; k < 8; k++) {
+        const bone = dae.scene.getObjectByName("bone0" + String(7 + 5 * k).padStart(2, "0"));
+        if (bone) legs.push({ bone, rz: bone.rotation.z, ph: (k % 2) * Math.PI });
+      }
+      spider = { crawler, legs, y: 1.2, dir: 1, wait: 0, x: CORR.x1 + 0.2, z: 7.25 };
+      orientSpider();
+    }).catch(loadFail("la araña"));
+  }
+
+  function orientSpider() {
+    // la panza pega a la pared (+x) y la cabeza (+z del modelo) mira hacia donde avanza
+    const d = spider.dir;
+    spider.crawler.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(
+      new THREE.Vector3(0, 0, d), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, d, 0)));
+  }
+
+  function updateSpider(dt, t) {
+    const s = spider;
+    if (s.wait > 0) {
+      s.wait -= dt;
+      if (s.wait <= 0) { s.dir = -s.dir; orientSpider(); }
+    } else {
+      s.y += s.dir * dt * 0.3;
+      if (s.y > 2.4 || s.y < 0.5) { s.y = THREE.MathUtils.clamp(s.y, 0.5, 2.4); s.wait = 1.5 + Math.random() * 2; }
+    }
+    s.crawler.position.set(s.x, s.y, s.z);
+    const moving = s.wait <= 0;
+    for (const l of s.legs) l.bone.rotation.z = l.rz + (moving ? Math.sin(t * 14 + l.ph) * 0.25 : 0);
   }
 
   function buildClock() {
@@ -1659,6 +1782,7 @@ const Scene3D = (() => {
       f.light.intensity = f.base * k;
       if (f.bulb) f.bulb.visible = k > 0.5;
     }
+    if (spider) updateSpider(dt, t);
     if (pendulum) pendulum.rotation.z = Math.sin(t * 1.6) * 0.12;
     if (chandelier) chandelier.rotation.z = Math.sin(t * 0.6) * 0.012;
 
@@ -1707,7 +1831,10 @@ const Scene3D = (() => {
     buildPaintings();
     buildChandelier();
     buildClutter();
+    buildBallLamp();
+    buildProps();
     buildCorridor();
+    buildSpider();
     buildHall();
     buildCobwebs();
     buildDust();
