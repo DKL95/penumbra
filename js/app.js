@@ -74,6 +74,7 @@
     // Config abierta desde pausa: volver a la pausa
     if (currentId === "screen-settings" && settingsOpenedFromPause) {
       settingsOpenedFromPause = false;
+      paused = false;            // openPause() vuelve a pausar el escenario al regresar
       showScreen("screen-game", { push: false });
       openPause();
       return;
@@ -304,7 +305,13 @@
       status.classList.add("ok");
       Sound.confirm();
     } catch (err) {
-      status.textContent = `${err.message} El puntaje quedó guardado en este equipo.`;
+      if (err.status === 401) {
+        // la sesión venció: pedir el nombre otra vez para reintentar
+        $("result-login").hidden = false;
+        status.textContent = "Tu sesión expiró. Escribe tu nombre para guardar el puntaje.";
+      } else {
+        status.textContent = `${err.message} El puntaje quedó guardado en este equipo.`;
+      }
       status.classList.add("err");
     }
   }

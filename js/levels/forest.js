@@ -466,6 +466,7 @@ export function buildForest(k) {
     background: 0x05070c, fogColor: 0x0a0d14, fog: 0.065, exposure: 1.7,
     surface: "grass",
     relicStyle: "rune",
+    navStep: 2.0,          // rejilla de navegación más abierta al aire libre
     bounds: { x1: -B, x2: B, z1: -B, z2: B },
     camZones: [
       { x1: 8.4, x2: 13.6, z1: -13.6, z2: -8.4, h: CH - 0.2 },     // dentro de la cabaña

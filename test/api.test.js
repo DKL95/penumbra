@@ -4,6 +4,9 @@
    una base SQLite temporal (DB_DRIVER=sqlite) para no tocar el
    MySQL real. Prueba el camino completo navegador → Node →
    PHP → BD. Si no hay PHP instalado, las pruebas se omiten.
+
+   Contra MySQL (crea y borra una base desechable penumbra_test_*):
+     TEST_DB_DRIVER=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_USER=root DB_PASS=… npm test
    ========================================================= */
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
@@ -20,6 +23,8 @@ const PHP = [process.env.PHP_BIN, "php", "C:\\xampp\\php\\php.exe", "/usr/bin/ph
 const skip = PHP ? false : "PHP no está instalado";
 
 let serverProc, BASE, dbFile;
+const DRIVER = process.env.TEST_DB_DRIVER === "mysql" ? "mysql" : "sqlite";
+const TEST_DB = `penumbra_test_${process.pid}`;
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -43,7 +48,7 @@ before(async () => {
   while (port > 65000) port = await freePort();
   dbFile = path.join(os.tmpdir(), `penumbra-test-${process.pid}-${Date.now()}.sqlite`);
   serverProc = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
-    env: { ...process.env, PORT: String(port), PHP_BIN: PHP, DB_DRIVER: "sqlite", DB_SQLITE: dbFile, FACEBOOK_APP_ID: "123456" },
+    env: { ...process.env, PORT: String(port), PHP_BIN: PHP, DB_DRIVER: DRIVER, DB_SQLITE: dbFile, DB_NAME: TEST_DB, FACEBOOK_APP_ID: "123456" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   await new Promise((resolve, reject) => {
@@ -62,6 +67,10 @@ before(async () => {
 
 after(() => {
   if (serverProc) serverProc.kill();
+  if (!skip && DRIVER === "mysql") {
+    // borra la base desechable
+    spawnSync(PHP, ["-r", `$p = new PDO('mysql:host=' . getenv('DB_HOST') . ';port=' . (getenv('DB_PORT') ?: 3306), getenv('DB_USER') ?: 'root', getenv('DB_PASS') ?: ''); $p->exec('DROP DATABASE IF EXISTS ${TEST_DB}');`], { env: process.env });
+  }
   if (dbFile) setTimeout(() => { try { fs.unlinkSync(dbFile); } catch { /* en uso */ } }, 300);
 });
 
@@ -76,7 +85,7 @@ test("public.php: estado del servicio y App ID de Facebook", { skip }, async () 
   assert.equal(data.ok, true);
   assert.equal(data.dbOk, true);
   assert.equal(data.facebookAppId, "123456");
-  assert.equal(data.db, "sqlite");
+  assert.equal(data.db, DRIVER);
 });
 
 test("auth.php: invitado obtiene token y el mismo guestId conserva al usuario", { skip }, async () => {

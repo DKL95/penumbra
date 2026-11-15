@@ -1343,20 +1343,100 @@ const Scene3D = (() => {
     }
   }
 
-  // ¿un muro corta el segmento a-b? (Liang–Barsky en el plano XZ)
-  function wallBetween(a, b) {
+  // ¿el segmento a-b corta la caja w agrandada r metros? (Liang–Barsky en el plano XZ)
+  function segHitsBox(a, b, w, r = 0) {
     const dx = b.x - a.x, dz = b.z - a.z;
-    for (const w of WALLS) {
-      let t0 = 0, t1 = 1, hit = true;
-      for (const [p, q] of [[-dx, a.x - w.x1], [dx, w.x2 - a.x], [-dz, a.z - w.z1], [dz, w.z2 - a.z]]) {
-        if (p === 0) { if (q < 0) { hit = false; break; } continue; }
-        const t = q / p;
-        if (p < 0) { if (t > t1) { hit = false; break; } if (t > t0) t0 = t; }
-        else { if (t < t0) { hit = false; break; } if (t < t1) t1 = t; }
-      }
-      if (hit) return true;
+    let t0 = 0, t1 = 1;
+    for (const [p, q] of [[-dx, a.x - (w.x1 - r)], [dx, (w.x2 + r) - a.x], [-dz, a.z - (w.z1 - r)], [dz, (w.z2 + r) - a.z]]) {
+      if (p === 0) { if (q < 0) return false; continue; }
+      const t = q / p;
+      if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+      else { if (t < t0) return false; if (t < t1) t1 = t; }
     }
+    return true;
+  }
+
+  // ¿un muro corta la línea de visión a-b? (los muebles no tapan la vista)
+  function wallBetween(a, b) {
+    for (const w of WALLS) if (segHitsBox(a, b, w)) return true;
     return false;
+  }
+
+  // ¿un personaje de radio r puede ir en línea recta de a a b sin chocar?
+  function clearPath(a, b, r = PLAYER_R - 0.04) {
+    for (const w of WALLS) if (segHitsBox(a, b, w, r)) return false;
+    for (const o of OBSTACLES) if (segHitsBox(a, b, o, r)) return false;
+    return true;
+  }
+
+  /* ---------------- Navegación del monstruo ----------------
+     Grafo de visibilidad: los puntos de ronda del escenario más una
+     rejilla automática de puntos libres que cubre todo el mapa. Dos
+     puntos se unen si se puede caminar en línea recta entre ellos.
+     Para llegar a un destino que no se ve, Dijkstra elige la ruta más
+     corta y el monstruo camina hacia el primer punto de esa ruta. */
+  function pointFree(x, z, r) {
+    const B = LV.bounds;
+    if (x < B.x1 + r || x > B.x2 - r || z < B.z1 + r || z > B.z2 - r) return false;
+    for (const b of WALLS.concat(OBSTACLES)) {
+      const cx = clamp(x, b.x1, b.x2), cz = clamp(z, b.z1, b.z2);
+      if ((x - cx) ** 2 + (z - cz) ** 2 < r * r) return false;
+    }
+    return true;
+  }
+
+  function navGraph() {
+    if (LV.nav) return LV.nav;
+    const nodes = LV.npcPath.slice(), P = nodes.length;
+    const step = LV.navStep || 1.25, B = LV.bounds;
+    for (let x = B.x1 + step / 2; x < B.x2; x += step)
+      for (let z = B.z1 + step / 2; z < B.z2; z += step)
+        if (pointFree(x, z, PLAYER_R + 0.08)) nodes.push(V3(x, 0, z));
+    const n = nodes.length, link = step * 2.3;
+    const adj = nodes.map(() => []);
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const d = nodes[i].distanceTo(nodes[j]);
+      if (!(i < P && j < P) && d > link) continue;     // la rejilla solo se une con vecinos
+      if (!clearPath(nodes[i], nodes[j])) continue;
+      adj[i].push([j, d]); adj[j].push([i, d]);
+    }
+    return (LV.nav = { nodes, adj });
+  }
+
+  // siguiente punto al que caminar para ir de `from` a `to` (null si no hay ruta)
+  function routeNext(from, to) {
+    const { nodes, adj } = navGraph();
+    const n = nodes.length;
+    const dist = new Array(n).fill(Infinity), first = new Array(n).fill(-1), done = new Array(n).fill(false);
+    const AT = -2;      // "ya estoy parado en este punto": el primer paso es el siguiente
+    const NEAR = 9;     // solo se prueban los puntos cercanos al origen y al destino
+    for (let i = 0; i < n; i++) {
+      const d = from.distanceTo(nodes[i]);
+      if (d < 0.45) { dist[i] = d; first[i] = AT; }
+      else if (d < NEAR && clearPath(from, nodes[i])) { dist[i] = d; first[i] = i; }
+    }
+    for (;;) {
+      let u = -1;
+      for (let i = 0; i < n; i++) if (!done[i] && dist[i] < Infinity && (u < 0 || dist[i] < dist[u])) u = i;
+      if (u < 0) break;
+      done[u] = true;
+      for (const [v, w] of adj[u]) if (dist[u] + w < dist[v]) { dist[v] = dist[u] + w; first[v] = first[u] === AT ? v : first[u]; }
+    }
+    let best = -1, bestCost = Infinity;
+    for (let i = 0; i < n; i++) {
+      if (dist[i] === Infinity) continue;
+      const dt = nodes[i].distanceTo(to), c = dist[i] + dt;
+      if (dt < NEAR && c < bestCost && clearPath(nodes[i], to)) { bestCost = c; best = i; }
+    }
+    if (best < 0) {     // el destino no se ve desde ningún punto: acercarse al más próximo
+      for (let i = 0; i < n; i++) {
+        if (dist[i] === Infinity) continue;
+        const c = nodes[i].distanceTo(to);
+        if (c < bestCost) { bestCost = c; best = i; }
+      }
+    }
+    if (best < 0) return null;
+    return first[best] === AT ? to : nodes[first[best]];
   }
 
   // zonas donde puede estar la cámara (con margen a los muros) y su techo
@@ -1418,7 +1498,7 @@ const Scene3D = (() => {
       },
       // ronda del monstruo: estudio → pasillo → gran salón → de regreso (tramos rectos sin muros)
       npcPath: [
-        [-0.5, 0.8], [2.6, -2.4], [2.6, 2.2], [0, 2.7], [0, 5.5], [0, 10.4],
+        [-0.5, 0.8], [2.6, -2.4], [2.6, 1.9], [0, 2.7], [0, 5.5], [0, 10.4],
         [0, 13.0], [-1.2, 15.0], [0, 17.4], [2.4, 16.0], [0.8, 12.8], [0, 10.4],
         [0, 5.5], [0, 2.7], [-2.8, 1.6],
       ].map(([x, z]) => V3(x, 0, z)),
@@ -1725,6 +1805,7 @@ const Scene3D = (() => {
     G.stunned = 0;
     G.transition = 0;
     scene.fog.density = LV.fog * (G.diff.fog / Rules.DIFFICULTY.normal.fog);
+    navGraph();             // grafo de navegación del monstruo (una vez por escenario)
     setupMatch();
     spawnItems();
     updateExitBeacon();
@@ -1781,6 +1862,7 @@ const Scene3D = (() => {
       speed: 0, flash: null, stepAcc: 0,
       wp: LV.npcStart || 0, wait: 2.5, chasing: false, stuck: 0,
       lastSeen: s.pos.clone(), searchT: 0, stun: 0, recover: 0, attackCd: 0,
+      navGoal: null, navT: 0, navTarget: s.pos.clone(), stuckCount: 0,
     };
     if (role === "survivor") other.flash = makeFlashlight(ch.root, false);
     ch.root.position.copy(other.pos);
@@ -2378,14 +2460,28 @@ const Scene3D = (() => {
     }
   }
 
-  // punto de ronda más cercano que se vea sin muros de por medio
+  // punto de ronda más cercano al que se pueda caminar en línea recta
   function nearestVisibleWp(pos) {
-    let best = other.wp, bestD = Infinity;
+    let best = -1, bestD = Infinity;
     LV.npcPath.forEach((p, i) => {
       const d = p.distanceTo(pos);
-      if (d < bestD && !wallBetween(pos, p)) { best = i; bestD = d; }
+      if (d < bestD && clearPath(pos, p)) { best = i; bestD = d; }
     });
+    if (best >= 0) return best;
+    LV.npcPath.forEach((p, i) => { const d = p.distanceTo(pos); if (d < bestD) { best = i; bestD = d; } });
     return best;
+  }
+
+  // a dónde caminar para llegar a `target`: directo si se puede, si no por la ruta
+  function steer(o, target, dt) {
+    if (clearPath(o.pos, target)) { o.navGoal = null; return target; }
+    o.navT -= dt;
+    if (!o.navGoal || o.navT <= 0 || o.pos.distanceTo(o.navGoal) < 0.4 || o.navTarget.distanceTo(target) > 1) {
+      o.navGoal = routeNext(o.pos, target);
+      o.navTarget.copy(target);
+      o.navT = 0.5;
+    }
+    return o.navGoal || target;
   }
 
   // IA del monstruo (modo un jugador): ronda por el escenario; si VE al
@@ -2415,7 +2511,7 @@ const Scene3D = (() => {
       }
 
       if (sees) {
-        if (dist > 0.85) { goal = player.pos; speed = d.monsterChase * G.boost; }
+        if (dist > 0.85) { goal = steer(o, player.pos, dt); speed = d.monsterChase * G.boost; }
         o.targetHeading = Math.atan2(toPlayer.x, toPlayer.z);
         if (dist < Rules.ATTACK_RANGE && o.attackCd <= 0) {
           o.attackCd = Rules.ATTACK_COOLDOWN;
@@ -2424,11 +2520,13 @@ const Scene3D = (() => {
           hurtPlayer(o.pos);
         }
       } else if (o.chasing) {
+        // fue a donde lo vio u oyó por última vez (rodeando muros si hace falta)
         o.searchT -= dt;
-        goal = o.lastSeen;
+        goal = steer(o, o.lastSeen, dt);
         speed = d.monsterChase * 0.85 * G.boost;
-        if (o.pos.distanceTo(o.lastSeen) < 0.5 || o.searchT <= 0) {
+        if (o.pos.distanceTo(o.lastSeen) < 0.6 || o.searchT <= 0) {
           o.chasing = false;
+          o.navGoal = null;
           o.wp = nearestVisibleWp(o.pos);
           o.wait = 1.2;
           goal = null; speed = 0;
@@ -2436,9 +2534,10 @@ const Scene3D = (() => {
       } else if (o.wait > 0) {
         o.wait -= dt;
       } else {
-        goal = LV.npcPath[o.wp];
+        const wp = LV.npcPath[o.wp];
+        goal = steer(o, wp, dt);
         speed = d.monsterWalk * G.boost;
-        if (o.pos.distanceTo(goal) < 0.35) {
+        if (o.pos.distanceTo(wp) < 0.35) {
           o.wp = (o.wp + 1) % LV.npcPath.length;
           o.wait = Math.random() < 0.4 ? 1 + Math.random() * 2 : 0;
           goal = null; speed = 0;
@@ -2455,15 +2554,21 @@ const Scene3D = (() => {
       }
     }
     collide(o.pos);
-    // si se atora contra un mueble, busca otro punto de ronda
+    // red de seguridad: si aun así se atora, recalcula la ruta y, si sigue, vuelve a su ronda
     if (goal && speed > 0) {
       o.stuck = before.distanceTo(o.pos) < speed * dt * 0.3 ? o.stuck + dt : 0;
-      if (o.stuck > 1.2) {
+      if (o.stuck > 0.8) {
+        o.navGoal = null;
+        o.navT = 0;
+        o.stuckCount = (o.stuckCount || 0) + 1;
         o.stuck = 0;
-        o.chasing = false;
-        o.wp = (nearestVisibleWp(o.pos) + 1) % LV.npcPath.length;
+        if (o.stuckCount >= 3) {
+          o.stuckCount = 0;
+          o.chasing = false;
+          o.wp = nearestVisibleWp(o.pos);
+        }
       }
-    }
+    } else o.stuckCount = 0;
     o.speed = THREE.MathUtils.lerp(o.speed, speed, 1 - Math.exp(-8 * dt));
     o.heading = angleLerp(o.heading, o.targetHeading, 1 - Math.exp(-6 * dt));
   }
@@ -2734,7 +2839,11 @@ const Scene3D = (() => {
     // acceso para depurar desde la consola: Scene3D.debug.player.pos, etc.
     get debug() {
       return {
-        player, other, cam, camera, scene, G, LV, config,
+        player, other, cam, camera, scene, G, LV, config, clearPath, routeNext, navGraph, wallBetween,
+        activate: (id) => activateLevel(id),
+        get battery() { return battery; }, set battery(v) { battery = v; },
+        get flashOn() { return flashOn; },
+        get running() { return running; },
         teleport(x, z) { player.pos.set(x, 0, z); },
         give(kind, n = 1) { for (let i = 0; i < n; i++) Rules.addItem(G.inv, kind); updateLiveHud(true); },
         relics() { G.relics = NEED; G.exitOpen = true; updateExitBeacon(); },

@@ -95,6 +95,12 @@ npm test
 punta con una base SQLite temporal, incluida la igualdad de la fórmula de puntaje JS = PHP
 (`test/api.test.js`, se omite si no hay PHP), y multijugador (`test/multiplayer.test.js`).
 
+Para probar el servicio contra un MySQL real (crea y borra una base desechable `penumbra_test_*`):
+
+```
+TEST_DB_DRIVER=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_USER=root DB_PASS=tu_contraseña npm test
+```
+
 ## Estructura
 
 ```
