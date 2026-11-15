@@ -2,12 +2,17 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#08080a" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>PENUMBRA — Escape Room de Terror</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Special+Elite&family=EB+Garamond:ital@0;1&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="css/styles.css" />
+<link rel="apple-touch-icon" href="assets/img/icon-1024.png" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2308080a'/%3E%3Cpath d='M16 4c-6 6-8 11-8 15a8 8 0 0 0 16 0c0-4-2-9-8-15z' fill='%238a1a12'/%3E%3C/svg%3E" />
 </head>
 <body>
@@ -84,7 +89,8 @@
       <div class="play-actions">
         <button class="btn btn-lg" data-action="start-game">Comenzar</button>
       </div>
-      <p class="micro center">Controles: <kbd>WASD</kbd> moverse · <kbd>Shift</kbd> correr · <kbd>E</kbd> recoger / abrir · <kbd>F</kbd> linterna · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> usar ítems · <kbd>ESC</kbd> pausa</p>
+      <p class="micro center only-keys">Controles: <kbd>WASD</kbd> moverse · <kbd>Shift</kbd> correr · <kbd>E</kbd> recoger / abrir · <kbd>F</kbd> linterna · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> usar ítems · <kbd>ESC</kbd> pausa</p>
+      <p class="micro center only-touch">Controles: <b>pulgar izquierdo</b> moverse (empuja hasta el borde para correr) · <b>desliza a la derecha</b> para mirar · botones para recoger, linterna y pausa · toca un ítem para usarlo. Juega en horizontal.</p>
 
       <button class="btn btn-back" data-action="back">Volver</button>
     </div>
@@ -128,8 +134,10 @@
       </div>
 
       <div class="role-hint">
-        <span class="tag tag-survivor">Superviviente</span> <kbd>E</kbd> recoge reliquias e ítems, <kbd>3</kbd> agua bendita paraliza al monstruo ·
-        <span class="tag tag-monster">Monstruo</span> <kbd>E</kbd> o clic ataca, <kbd>F</kbd> ruge
+        <span class="only-keys"><span class="tag tag-survivor">Superviviente</span> <kbd>E</kbd> recoge reliquias e ítems, <kbd>3</kbd> agua bendita paraliza al monstruo ·
+        <span class="tag tag-monster">Monstruo</span> <kbd>E</kbd> o clic ataca, <kbd>F</kbd> ruge</span>
+        <span class="only-touch"><span class="tag tag-survivor">Superviviente</span> el botón de la mano recoge reliquias e ítems; el agua bendita paraliza al monstruo ·
+        <span class="tag tag-monster">Monstruo</span> el botón de la garra ataca y el otro ruge</span>
       </div>
 
       <button class="btn btn-back" data-action="back">Volver</button>
@@ -225,7 +233,7 @@
         </label>
 
         <label class="row">
-          <span>Sensibilidad del ratón</span>
+          <span>Sensibilidad de la cámara</span>
           <input type="range" name="sensitivity" min="1" max="20" step="1" />
           <output data-for="sensitivity">8</output>
         </label>
@@ -303,6 +311,13 @@
 
 </main>
 
+<!-- Aviso para celulares en vertical durante la partida -->
+<div class="rotate-hint" aria-live="polite">
+  <div class="rotate-phone"></div>
+  <p>Gira tu teléfono</p>
+  <small>PENUMBRA se juega en horizontal</small>
+</div>
+
 <!-- ========================= OVERLAY: PAUSA ========================= -->
 <div class="overlay" id="overlay-pause" hidden>
   <div class="overlay-card">
@@ -360,6 +375,7 @@
 <script src="js/net.js"></script>
 <script src="js/api.js"></script>
 <script type="module" src="js/scene3d.js"></script>
+<script src="js/touch.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

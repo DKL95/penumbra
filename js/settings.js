@@ -11,7 +11,8 @@ const Settings = (() => {
     volume: 70,        // 0..100
     music: 50,         // 0..100
     difficulty: "normal",
-    quality: "medium",
+    // en celulares/tablets se empieza en calidad baja (sin sombras) para ir fluido
+    quality: window.matchMedia && matchMedia("(pointer: coarse)").matches ? "low" : "medium",
     sensitivity: 8,    // 1..20
   };
 

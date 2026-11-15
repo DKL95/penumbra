@@ -1917,6 +1917,7 @@ const Scene3D = (() => {
     if (inv) inv.style.visibility = surv ? "visible" : "hidden";
     const items = $("hud-items-hint");
     if (items) items.hidden = !surv;
+    if (window.Touch) Touch.setRole(player.role);
     updateNetHud();
     updateLiveHud(true);
   }
@@ -1977,20 +1978,27 @@ const Scene3D = (() => {
   }
 
   function updatePrompt() {
-    let html = "";
+    let html = "", verb = "", ready = false;
     if (!G.over && G.transition <= 0) {
       if (player.role === "survivor") {
         const it = nearestItem();
         if (it) {
           const label = it.kind === "relic" ? Rules.SCENARIOS[G.scenario].relic : Rules.ITEMS[it.kind].label;
           html = `<kbd>E</kbd> Recoger ${label}`;
+          verb = "Recoger"; ready = true;
         } else if (nearExit()) {
           html = G.exitOpen ? `<kbd>E</kbd> Escapar por ${LV.exit.label}`
                             : `<kbd>E</kbd> Cerrada — faltan ${NEED - G.relics} ${Rules.SCENARIOS[G.scenario].relics}`;
+          verb = G.exitOpen ? "Escapar" : "Cerrada"; ready = G.exitOpen;
         }
       } else if (other && !other.npc && player.pos.distanceTo(other.pos) < Rules.ATTACK_RANGE + 0.4) {
         html = `<kbd>E</kbd> Atacar`;
+        verb = "Atacar"; ready = true;
       }
+    }
+    if (window.Touch && Touch.enabled) {
+      Touch.setAction(verb, ready);
+      Touch.setFlash(player.role === "survivor" && flashOn);
     }
     const el = $("interact-prompt");
     if (!el) return;
@@ -2005,31 +2013,47 @@ const Scene3D = (() => {
   function canControl() {
     return !paused && !G.over && G.transition <= 0;
   }
+  const touchMode = () => !!(window.Touch && Touch.enabled);
+  // nombre de la tecla en los mensajes (en el celular no hay teclas)
+  const keyTip = (k) => (touchMode() ? "" : ` (${k})`);
+
   function onKeyDown(e) {
     if (!running || paused) return;
     keys.add(e.code);
-    if (e.repeat || !canControl()) return;
-    if (e.code === "KeyF") doAction();
-    else if (e.code === "KeyE") interact();
-    else if (e.code === "Digit1" || e.code === "Numpad1") useItem("battery");
-    else if (e.code === "Digit2" || e.code === "Numpad2") useItem("medkit");
-    else if (e.code === "Digit3" || e.code === "Numpad3") useItem("holywater");
+    if (e.repeat) return;
+    press(e.code);
+  }
+  // una acción puntual: tecla o botón táctil (js/touch.js)
+  function press(code) {
+    if (!running || paused || !canControl()) return;
+    if (code === "KeyF") doAction();
+    else if (code === "KeyE") interact();
+    else if (code === "Digit1" || code === "Numpad1") useItem("battery");
+    else if (code === "Digit2" || code === "Numpad2") useItem("medkit");
+    else if (code === "Digit3" || code === "Numpad3") useItem("holywater");
   }
   function onKeyUp(e) { keys.delete(e.code); }
+  function turnCamera(dx, dy, sens) {
+    cam.yaw -= dx * sens;
+    cam.pitch = clamp(cam.pitch - dy * sens, -0.9, 0.35);
+  }
   function onMouseMove(e) {
     if (!locked || paused) return;
-    const sens = (window.Settings ? Settings.get().sensitivity : 8) * 0.00028;
-    cam.yaw -= e.movementX * sens;
-    cam.pitch = clamp(cam.pitch - e.movementY * sens, -0.9, 0.35);
+    turnCamera(e.movementX, e.movementY, (window.Settings ? Settings.get().sensitivity : 8) * 0.00028);
+  }
+  // deslizar el dedo en la mitad derecha de la pantalla
+  function look(dx, dy) {
+    if (!running || paused || G.over) return;
+    turnCamera(dx, dy, (window.Settings ? Settings.get().sensitivity : 8) * 0.0009);
   }
   function onCanvasClick() {
-    if (!running || paused || G.over) return;
+    if (!running || paused || G.over || touchMode()) return;
     if (!locked) return requestLock();
     if (player.role === "monster" && canControl()) monsterAttack();
   }
   function requestLock() {
     const c = renderer && renderer.domElement;
-    if (!c) return;
+    if (!c || touchMode()) return;
     try {
       const p = c.requestPointerLock();
       if (p && p.catch) p.catch(() => {});
@@ -2038,14 +2062,14 @@ const Scene3D = (() => {
   function onLockChange() {
     locked = document.pointerLockElement === renderer.domElement;
     const hint = $("hud-lock");
-    if (hint) hint.hidden = locked || !running || paused || G.over;
+    if (hint) hint.hidden = locked || !running || paused || G.over || touchMode();
     // salir del puntero con ESC = pausa (pero no al terminar la partida)
     if (!locked && running && !paused && !G.over) window.dispatchEvent(new CustomEvent("penumbra:unlock"));
   }
 
   function doAction() {
     if (player.role === "survivor") {
-      if (battery <= 0.02 && !flashOn) { toast("Sin batería. Usa una batería (1)."); return; }
+      if (battery <= 0.02 && !flashOn) { toast(`Sin batería. Usa una batería${keyTip(1)}.`); return; }
       flashOn = !flashOn;
       Sound.flashlight();
       if (window.Net) Net.sendEvent("flash", flashOn);
@@ -2102,7 +2126,8 @@ const Scene3D = (() => {
     } else {
       if (!Rules.addItem(G.inv, it.kind)) { Sound.denied(); toast(`No puedes cargar más (${Rules.ITEMS[it.kind].label}).`); return; }
       Sound.pickup(false);
-      toast(`${Rules.ITEMS[it.kind].label} — úsala con la tecla ${Rules.ITEMS[it.kind].key}`);
+      toast(touchMode() ? `${Rules.ITEMS[it.kind].label} — tócala en el inventario para usarla`
+                        : `${Rules.ITEMS[it.kind].label} — úsala con la tecla ${Rules.ITEMS[it.kind].key}`);
     }
     it.taken = true;
     it.mesh.visible = false;
@@ -2196,12 +2221,13 @@ const Scene3D = (() => {
     G.invuln = Rules.INVULNERABLE;
     Sound.hurt();
     hurtFlash();
+    if (window.Touch) Touch.buzz(160);   // vibración en el celular
     cam.shake = 0.8;
     const push = player.pos.clone().sub(from).setY(0);
     if (push.lengthSq() > 1e-4) player.vel.addScaledVector(push.normalize(), 5);
     sendHp();
     if (G.hp <= 0) endMatch("caught");
-    else toast(G.hp === 1 ? "¡Te queda una vida! Usa un botiquín (2)." : "¡El monstruo te alcanzó!");
+    else toast(G.hp === 1 ? `¡Te queda una vida! Usa un botiquín${keyTip(2)}.` : "¡El monstruo te alcanzó!");
     updateLiveHud();
     return true;
   }
@@ -2390,16 +2416,22 @@ const Scene3D = (() => {
     _fwd.set(-Math.sin(cam.yaw), 0, -Math.cos(cam.yaw));
     _right.set(Math.cos(cam.yaw), 0, -Math.sin(cam.yaw));
     _wish.set(0, 0, 0);
-    if (canControl() && !(monster && G.stunned > 0)) {
+    const stick = window.Touch && Touch.enabled && Touch.move.active ? Touch.move : null;
+    const free = canControl() && !(monster && G.stunned > 0);
+    if (free) {
       if (keys.has("KeyW") || keys.has("ArrowUp")) _wish.add(_fwd);
       if (keys.has("KeyS") || keys.has("ArrowDown")) _wish.sub(_fwd);
       if (keys.has("KeyD") || keys.has("ArrowRight")) _wish.add(_right);
       if (keys.has("KeyA") || keys.has("ArrowLeft")) _wish.sub(_right);
+      // joystick táctil: arriba = adelante
+      if (stick) _wish.addScaledVector(_fwd, -stick.y).addScaledVector(_right, stick.x);
     }
-    const moving = _wish.lengthSq() > 0;
-    const run = keys.has("ShiftLeft") || keys.has("ShiftRight");
+    const moving = _wish.lengthSq() > 1e-6;
+    const run = keys.has("ShiftLeft") || keys.has("ShiftRight") || !!(free && stick && stick.run);
     const mul = monster ? G.diff.monsterPlayerSpeed : 1;
-    const maxSpeed = moving ? (run ? def.runSpeed : def.walkSpeed) * mul : 0;
+    // con el joystick se camina más lento si apenas se empuja (control fino)
+    const analog = free && stick && !run ? 0.4 + 0.6 * Math.min(1, stick.mag / 0.9) : 1;
+    const maxSpeed = moving ? (run ? def.runSpeed : def.walkSpeed * analog) * mul : 0;
     if (moving) _wish.normalize().multiplyScalar(maxSpeed);
 
     // aceleración suave
@@ -2433,7 +2465,7 @@ const Scene3D = (() => {
     if (flashlight) {
       const d = G.diff;
       battery = clamp(battery + (flashOn ? -d.drain : d.recharge) * dt, 0, 1);
-      if (battery <= 0 && flashOn) { flashOn = false; toast("La linterna se quedó sin batería. Usa una batería (1)."); }
+      if (battery <= 0 && flashOn) { flashOn = false; toast(`La linterna se quedó sin batería. Usa una batería${keyTip(1)}.`); }
       const flicker = battery < 0.15 ? (Math.random() < 0.1 ? 0.2 : 1) : 1;
       flashlight.visible = flashOn;
       flashlight.intensity = 9 * flicker * (0.5 + battery * 0.5);
@@ -2763,13 +2795,22 @@ const Scene3D = (() => {
       window.addEventListener("keydown", onKeyDown);
       window.addEventListener("keyup", onKeyUp);
       window.addEventListener("blur", () => keys.clear());
+      // al cambiar a ratón/táctil a media partida, mostrar u ocultar el aviso del ratón
+      window.addEventListener("penumbra:inputmode", () => {
+        const h = $("hud-lock");
+        if (h) h.hidden = locked || !running || paused || G.over || touchMode();
+      });
+      // cambiar de app / pestaña o apagar la pantalla del celular = pausa
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden && running && !paused && !G.over) window.dispatchEvent(new CustomEvent("penumbra:unlock"));
+      });
       bindNet();
     }
     paused = false;
     resize();
     window.addEventListener("resize", resize);
     const hint = $("hud-lock");
-    if (hint) hint.hidden = locked;
+    if (hint) hint.hidden = locked || touchMode();
 
     if (matchPending) {
       // mientras cargan los modelos ya se ve el escenario de destino
@@ -2785,7 +2826,7 @@ const Scene3D = (() => {
     }
 
     ensureModels().then(() => {
-      if (matchPending) { matchPending = false; newGame(); }
+      if (matchPending) { matchPending = false; newGame(); if (window.Touch) Touch.tutorial(); }
       else refreshHud();
     }).catch(() => {});
 
@@ -2838,6 +2879,8 @@ const Scene3D = (() => {
 
   return {
     start, stop, pause, resume, end, restart, configure, applyQuality,
+    press, look,                 // controles táctiles (js/touch.js)
+    refresh() { if (player.char) refreshHud(); },
     get mode() { return config.mode; },
     get over() { return G.over; },
     // acceso para depurar desde la consola: Scene3D.debug.player.pos, etc.

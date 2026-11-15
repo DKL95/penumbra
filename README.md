@@ -76,6 +76,13 @@ Controles: **WASD** moverse · **Shift** correr · **ratón** mirar (clic para c
 **E** recoger / abrir (monstruo: atacar, también con clic) · **F** linterna (monstruo: rugir) ·
 **1 / 2 / 3** usar batería / botiquín / agua bendita · **ESC** pausa.
 
+**En el celular o tablet** (se activa solo en pantallas táctiles; en la computadora no cambia nada):
+pulgar izquierdo = joystick para moverse (empújalo hasta el borde para **correr**) · deslizar en la mitad
+derecha = **mirar** · botón de la **mano** = recoger / escapar (monstruo: garra = atacar) · botón de la
+**linterna** (monstruo: rugir) · tocar una casilla del **inventario** = usar el ítem · **II** = pausa.
+Se juega en horizontal y en pantalla completa; en celulares empieza en calidad gráfica baja. Cambiar de
+app o girar el teléfono a vertical pausa la partida, y el teléfono vibra al recibir daño (Android).
+
 ### Ítems
 
 | Ítem | Efecto |
@@ -145,6 +152,7 @@ js/audio.js              música y efectos (Web Audio API)
 js/net.js                cliente WebSocket
 js/api.js                cliente del servicio web (fetch) + Facebook SDK + LocalStorage
 js/settings.js           configuración persistente (LocalStorage)
+js/touch.js              controles táctiles: joystick, mirar, botones, pantalla completa
 js/lib/                  Three.js r160 y addons oficiales (vendorizados, offline)
 api/auth.php             inicio de sesión (Facebook / invitado), sesión por token
 api/scores.php           guardar y listar puntajes

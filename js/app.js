@@ -54,7 +54,9 @@
     if (inGame) {
       Sound.stopAmbient();
       safeCanvas("start");
+      if (window.Touch) Touch.enterGame();     // controles táctiles + pantalla completa
     } else {
+      if (window.Touch) Touch.leaveGame();
       safeCanvas("stop");
       if (id === "screen-menu") Sound.startAmbient();
     }
