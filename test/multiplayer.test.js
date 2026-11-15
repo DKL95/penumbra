@@ -94,7 +94,7 @@ async function joinRoom(code, name = "Beto") {
 before(async () => {
   PORT = await freePort();
   serverProc = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
-    env: { ...process.env, PORT: String(PORT) },
+    env: { ...process.env, PORT: String(PORT), NO_PHP: "1" },   // el servicio PHP se prueba en api.test.js
     stdio: ["ignore", "pipe", "pipe"],
   });
   await new Promise((resolve, reject) => {
@@ -128,7 +128,52 @@ test("HTTP: sirve index.html y bloquea node_modules", async () => {
   assert.equal(missing.status, 404);
 });
 
+test("HTTP: no expone archivos ocultos (.git) ni las pruebas", async () => {
+  assert.equal((await fetch(`http://localhost:${PORT}/.git/config`)).status, 403);
+  assert.equal((await fetch(`http://localhost:${PORT}/test/multiplayer.test.js`)).status, 403);
+});
+
+test("HTTP: /api sin servicio PHP responde 503 en JSON", async () => {
+  const r = await fetch(`http://localhost:${PORT}/api/public.php`);
+  assert.equal(r.status, 503);
+  const d = await r.json();
+  assert.equal(d.ok, false);
+});
+
 /* ---------------- creación de salas ---------------- */
+test("la sala guarda el escenario y la dificultad del anfitrión y los pasa a quien se une", async () => {
+  const ws = await connect();
+  sendMsg(ws, { t: "create", name: "Ana", settings: { scenario: "forest", difficulty: "blackout" } });
+  const created = await waitFor(ws, "created");
+  assert.deepEqual(created.settings, { scenario: "forest", difficulty: "blackout" });
+  const { msg } = await joinRoom(created.code);
+  assert.equal(msg.t, "joined");
+  assert.deepEqual(msg.settings, { scenario: "forest", difficulty: "blackout" });
+});
+
+test("configuración de sala inválida o ausente usa mansión / normal", async () => {
+  const ws = await connect();
+  sendMsg(ws, { t: "create", name: "Ana", settings: { scenario: "luna", difficulty: "imposible" } });
+  assert.deepEqual((await waitFor(ws, "created")).settings, { scenario: "mansion", difficulty: "normal" });
+  const { msg } = await createRoom();
+  assert.deepEqual(msg.settings, { scenario: "mansion", difficulty: "normal" });
+});
+
+test("event: los eventos de partida (recoger, golpe, agua bendita, fin) llegan al otro", async () => {
+  const { ws: host, msg } = await createRoom();
+  const { ws: guest } = await joinRoom(msg.code);
+  await waitFor(host, "peer-join");
+  sendMsg(host, { t: "event", e: "pick", d: { id: "mansion-0", relics: 1 } });
+  const pick = await waitFor(guest, "event");
+  assert.equal(pick.e, "pick");
+  assert.deepEqual(pick.d, { id: "mansion-0", relics: 1 });
+  sendMsg(guest, { t: "event", e: "hit", d: { x: 1, z: 2 } });
+  const hit = await waitFor(host, "event");
+  assert.equal(hit.e, "hit");
+  sendMsg(host, { t: "event", e: "end", d: { result: "escaped" } });
+  assert.equal((await waitFor(guest, "event")).d.result, "escaped");
+});
+
 test("crear sala: código de 4 letras y rol superviviente", async () => {
   const { msg } = await createRoom();
   assert.match(msg.code, /^[A-HJ-NP-Z2-9]{4}$/);

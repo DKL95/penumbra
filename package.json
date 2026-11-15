@@ -1,6 +1,6 @@
 {
   "name": "penumbra",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "PENUMBRA — escape room de terror en WebGL (Gráficas Computacionales en Web, Grupo 051)",
   "private": true,
   "main": "server.js",

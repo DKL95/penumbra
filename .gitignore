@@ -4,3 +4,11 @@ npm-debug.log*
 Thumbs.db
 # documento del profesor (cada integrante ya lo tiene)
 FE-GCW-051-SJFE-AD2026.docx
+
+# servicio web: credenciales locales y base SQLite de pruebas
+api/config.local.php
+api/data/*.sqlite
+# material de trabajo (modelos ya copiados a assets/, documentos personales)
+*.zip
+*.docx
+lamparas/

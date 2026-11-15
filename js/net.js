@@ -1,7 +1,7 @@
 /* =========================================================
    PENUMBRA — Cliente de red (multijugador en tiempo real)
    WebSocket contra server.js. Expone window.Net:
-     Net.create()            crea sala → evento "created"
+     Net.create(name, cfg)   crea sala (cfg = { scenario, difficulty }) → "created"
      Net.join(code)          se une     → evento "joined"
      Net.sendState(p, r, a)  posición / rotación / animación
      Net.sendEvent(e, d)     eventos sueltos
@@ -15,7 +15,7 @@ const Net = (() => {
   let ws = null;
   let pingTimer = null;
   const handlers = {};
-  const info = { connected: false, code: null, id: null, role: null, peers: [], ping: 0 };
+  const info = { connected: false, code: null, id: null, role: null, peers: [], ping: 0, settings: null };
 
   function on(type, fn) { (handlers[type] ||= []).push(fn); }
   function emit(type, data) { (handlers[type] || []).forEach((fn) => fn(data)); }
@@ -59,10 +59,10 @@ const Net = (() => {
     try { msg = JSON.parse(ev.data); } catch { return; }
     switch (msg.t) {
       case "created":
-        Object.assign(info, { code: msg.code, id: msg.id, role: msg.role, peers: [] });
+        Object.assign(info, { code: msg.code, id: msg.id, role: msg.role, peers: [], settings: msg.settings });
         break;
       case "joined":
-        Object.assign(info, { code: msg.code, id: msg.id, role: msg.role, peers: msg.peers });
+        Object.assign(info, { code: msg.code, id: msg.id, role: msg.role, peers: msg.peers, settings: msg.settings });
         break;
       case "peer-join":
         info.peers.push({ id: msg.id, role: msg.role, name: msg.name });
@@ -82,9 +82,9 @@ const Net = (() => {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   }
 
-  async function create(name) {
+  async function create(name, settings) {
     await connect();
-    raw({ t: "create", name });
+    raw({ t: "create", name, settings });
   }
   async function join(code, name) {
     await connect();

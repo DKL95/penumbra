@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Special+Elite&family=EB+Garamond:ital@0;1&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="css/styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2308080a'/%3E%3Cpath d='M16 4c-6 6-8 11-8 15a8 8 0 0 0 16 0c0-4-2-9-8-15z' fill='%238a1a12'/%3E%3C/svg%3E" />
 </head>
 <body>
 
@@ -28,16 +29,64 @@
       <h1 class="game-title" data-text="PENUMBRA">PENUMBRA</h1>
       <p class="tagline">No apagues la linterna.</p>
       <nav class="menu-nav">
-        <button class="btn btn-lg" data-action="go" data-target="screen-game">Jugar</button>
+        <button class="btn btn-lg" data-action="go" data-target="screen-play">Jugar</button>
         <button class="btn btn-lg" data-action="go" data-target="screen-multiplayer">Multijugador</button>
         <button class="btn btn-lg" data-action="go" data-target="screen-scores">Puntajes</button>
         <button class="btn btn-lg" data-action="go" data-target="screen-settings">Configuración</button>
         <button class="btn btn-lg btn-ghost" data-action="quit">Salir</button>
       </nav>
+      <p class="micro menu-user" id="menu-user"></p>
       <footer class="menu-foot">
         <span>Grupo 051 · Gráficas Computacionales en Web</span>
-        <span>2º avance — Ago–Dic 2026</span>
+        <span>Entrega final — Ago–Dic 2026</span>
       </footer>
+    </div>
+  </section>
+
+  <!-- ========================= JUGAR (modo, escenario, dificultad) ========================= -->
+  <section class="screen" id="screen-play" data-title="Jugar">
+    <div class="panel">
+      <h2 class="screen-h">Nueva partida</h2>
+      <p class="screen-sub">Elige cómo quieres sobrevivir esta noche.</p>
+
+      <h3 class="pick-h">Modo de juego</h3>
+      <div class="pick-grid pick-2" id="pick-mode">
+        <button class="pick selected" data-mode="escape">
+          <b>Escape</b>
+          <span>Recorre los <em>3 escenarios</em> en orden. En cada uno junta 3 reliquias y encuentra la salida. Tu vida y tu inventario pasan contigo.</span>
+        </button>
+        <button class="pick" data-mode="survival">
+          <b>Supervivencia</b>
+          <span>Un escenario <em>sin salida</em>. Las reliquias reaparecen sin fin y el monstruo se vuelve más rápido con cada una. ¿Cuántas juntas?</span>
+        </button>
+      </div>
+
+      <h3 class="pick-h">Escenario <small id="pick-scenario-note">(Escape recorre los tres)</small></h3>
+      <div class="pick-grid pick-3" id="pick-scenario">
+        <button class="pick scene-mansion selected" data-scenario="mansion">
+          <b>Mansión Ravenwood</b><span>Estudio, pasillo y gran salón. Busca los fragmentos de la llave.</span>
+        </button>
+        <button class="pick scene-hospital" data-scenario="hospital">
+          <b>Hospital San Judas</b><span>Quirófano, morgue y luces que fallan. Repara el elevador con 3 fusibles.</span>
+        </button>
+        <button class="pick scene-forest" data-scenario="forest">
+          <b>Bosque de Ceniza</b><span>Al aire libre: cabaña, cementerio y un pozo. Reúne las piedras rúnicas.</span>
+        </button>
+      </div>
+
+      <h3 class="pick-h">Dificultad</h3>
+      <div class="pick-grid pick-3" id="pick-difficulty">
+        <button class="pick" data-difficulty="normal"><b>Normal</b><span>3 vidas · el monstruo solo te ve de cerca · la linterna se recarga apagada.</span></button>
+        <button class="pick" data-difficulty="dark"><b>Oscuro</b><span>2 vidas · monstruo más rápido que <em>oye cuando corres</em> · menos ítems · más niebla.</span></button>
+        <button class="pick" data-difficulty="blackout"><b>Apagón</b><span>1 vida · te oye hasta caminar · la batería no se recarga sola · casi sin ayudas.</span></button>
+      </div>
+
+      <div class="play-actions">
+        <button class="btn btn-lg" data-action="start-game">Comenzar</button>
+      </div>
+      <p class="micro center">Controles: <kbd>WASD</kbd> moverse · <kbd>Shift</kbd> correr · <kbd>E</kbd> recoger / abrir · <kbd>F</kbd> linterna · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> usar ítems · <kbd>ESC</kbd> pausa</p>
+
+      <button class="btn btn-back" data-action="back">Volver</button>
     </div>
   </section>
 
@@ -45,15 +94,28 @@
   <section class="screen" id="screen-multiplayer" data-title="Multijugador">
     <div class="panel">
       <h2 class="screen-h">Multijugador</h2>
-      <p class="screen-sub">Un jugador escapa. El otro es el monstruo.</p>
+      <p class="screen-sub">Un jugador escapa. El otro es el monstruo. En tiempo real.</p>
 
       <div class="mp-grid">
         <div class="card">
           <h3>Crear partida</h3>
-          <p class="muted">Comparte el código con tu compañero.</p>
+          <label class="mini-row"><span>Escenario</span>
+            <select id="mp-scenario">
+              <option value="mansion">Mansión Ravenwood</option>
+              <option value="hospital">Hospital San Judas</option>
+              <option value="forest">Bosque de Ceniza</option>
+            </select>
+          </label>
+          <label class="mini-row"><span>Dificultad</span>
+            <select id="mp-difficulty">
+              <option value="normal">Normal</option>
+              <option value="dark">Oscuro</option>
+              <option value="blackout">Apagón</option>
+            </select>
+          </label>
           <div class="code-box" id="mp-code">— — — —</div>
           <button class="btn" data-action="generate-code">Crear sala</button>
-          <p class="micro" id="mp-host-status">Serás el <b>superviviente</b>.</p>
+          <p class="micro" id="mp-host-status">Serás el <b>superviviente</b>: junta 3 reliquias y escapa.</p>
         </div>
 
         <div class="card">
@@ -61,13 +123,13 @@
           <p class="muted">Escribe el código de tu anfitrión.</p>
           <input class="field" id="mp-join" type="text" maxlength="4" placeholder="Ej. 4KZ9" autocomplete="off" />
           <button class="btn" data-action="join-game">Unirse</button>
-          <p class="micro" id="mp-join-status">Serás el <b>monstruo</b>.</p>
+          <p class="micro" id="mp-join-status">Serás el <b>monstruo</b>: atrápalo antes de que escape.</p>
         </div>
       </div>
 
       <div class="role-hint">
-        <span class="tag tag-survivor">Superviviente</span> resuelve puzzles y busca la salida ·
-        <span class="tag tag-monster">Monstruo</span> caza por sonido y visión
+        <span class="tag tag-survivor">Superviviente</span> <kbd>E</kbd> recoge reliquias e ítems, <kbd>3</kbd> agua bendita paraliza al monstruo ·
+        <span class="tag tag-monster">Monstruo</span> <kbd>E</kbd> o clic ataca, <kbd>F</kbd> ruge
       </div>
 
       <button class="btn btn-back" data-action="back">Volver</button>
@@ -77,24 +139,47 @@
   <!-- ========================= PUNTAJES ========================= -->
   <section class="screen" id="screen-scores" data-title="Puntajes">
     <div class="panel">
-      <h2 class="screen-h">Mejores escapes</h2>
-      <p class="screen-sub">Tiempos más rápidos para salir con vida.</p>
+      <h2 class="screen-h">Puntajes</h2>
+      <p class="screen-sub" id="scores-source">Cargando la tabla…</p>
+
+      <div class="tabs" id="scores-tabs">
+        <button class="tab selected" data-mode="escape">Escape</button>
+        <button class="tab" data-mode="survival">Supervivencia</button>
+        <button class="tab" data-mode="versus">Multijugador</button>
+        <select id="scores-difficulty" aria-label="Filtrar por dificultad">
+          <option value="">Todas las dificultades</option>
+          <option value="normal">Normal</option>
+          <option value="dark">Oscuro</option>
+          <option value="blackout">Apagón</option>
+        </select>
+      </div>
 
       <table class="scores">
         <thead>
-          <tr><th>#</th><th>Superviviente</th><th>Escenario</th><th>Dificultad</th><th>Tiempo</th></tr>
+          <tr><th>#</th><th>Jugador</th><th>Escenario</th><th>Dificultad</th><th>Tiempo</th><th>Puntos</th></tr>
         </thead>
-        <tbody id="scores-body"><!-- se llena desde JS --></tbody>
+        <tbody id="scores-body"><!-- se llena desde JS (servicio web) --></tbody>
       </table>
 
-      <div class="social">
-        <p class="muted">Inicia sesión para guardar tus tiempos en la tabla global:</p>
-        <div class="social-btns">
-          <button class="btn btn-social sb-fb" data-action="social" data-net="Facebook">Facebook</button>
-          <button class="btn btn-social sb-tw" data-action="social" data-net="Twitter">Twitter</button>
-          <button class="btn btn-social sb-ig" data-action="social" data-net="Instagram">Instagram</button>
+      <div class="social" id="account-box">
+        <!-- sin sesión -->
+        <div id="login-box">
+          <p class="muted">Inicia sesión para guardar tus puntajes en la tabla global:</p>
+          <div class="social-btns">
+            <button class="btn btn-social sb-fb" data-action="login-facebook">Entrar con Facebook</button>
+          </div>
+          <div class="guest-row">
+            <input class="field field-name" id="guest-name" type="text" maxlength="20" placeholder="Tu nombre" autocomplete="nickname" />
+            <button class="btn" data-action="login-guest">Jugar como invitado</button>
+          </div>
         </div>
-        <p class="micro" id="social-status">Sin sesión — los tiempos solo se guardan en este equipo.</p>
+        <!-- con sesión -->
+        <div id="user-box" class="user-box" hidden>
+          <img id="user-photo" alt="" />
+          <div><b id="user-name"></b><span class="micro" id="user-provider"></span></div>
+          <button class="btn btn-ghost" data-action="logout">Cerrar sesión</button>
+        </div>
+        <p class="micro" id="social-status"></p>
       </div>
 
       <button class="btn btn-back" data-action="back">Volver</button>
@@ -122,9 +207,9 @@
         <label class="row">
           <span>Dificultad</span>
           <select name="difficulty">
-            <option value="normal">Normal — con linterna</option>
-            <option value="dark">Oscuro — monstruo agresivo</option>
-            <option value="blackout">Apagón — sin linterna, puzzles duros</option>
+            <option value="normal">Normal — 3 vidas</option>
+            <option value="dark">Oscuro — 2 vidas, el monstruo te oye correr</option>
+            <option value="blackout">Apagón — 1 vida, linterna sin recarga</option>
           </select>
         </label>
 
@@ -154,16 +239,18 @@
     </div>
   </section>
 
-  <!-- ========================= PANTALLA DE JUEGO (maqueta HUD) ========================= -->
+  <!-- ========================= PANTALLA DE JUEGO ========================= -->
   <section class="screen" id="screen-game" data-title="En juego">
     <canvas id="game-canvas"></canvas>
 
     <!-- HUD -->
     <div class="hud">
+      <div class="hud-hurt" id="hud-hurt"></div>
+
       <div class="hud-top">
         <div class="objective">
           <span class="objective-label">Objetivo</span>
-          <span class="objective-text" id="objective-text">Encuentra la llave del sótano</span>
+          <span class="objective-text" id="objective-text">Explora…</span>
         </div>
         <div class="hud-meta">
           <span class="tag tag-survivor" id="hud-role">Superviviente</span>
@@ -173,32 +260,40 @@
           <span id="hud-difficulty">Normal</span>
           <span class="dot">·</span>
           <span id="hud-net">Un jugador</span>
+          <span class="dot">·</span>
+          <span id="hud-time">00:00</span>
         </div>
       </div>
 
+      <div class="hud-stats">
+        <div class="hud-hp-wrap"><span class="hud-label" id="hud-hp-label">Vida</span><span class="hearts" id="hud-hp"></span></div>
+        <div class="hud-relics" id="hud-relics">Reliquias 0/3</div>
+      </div>
+
       <div class="reticle"></div>
-      <div class="interact-prompt" id="interact-prompt"><kbd>E</kbd> Examinar cerradura</div>
+      <div class="interact-prompt" id="interact-prompt" style="display:none"></div>
       <div class="hud-toast" id="hud-toast"></div>
+      <div class="hud-banner" id="hud-banner"></div>
+      <div class="hud-center-msg hud-stun" id="hud-stun" hidden>Paralizado por el agua bendita</div>
       <div class="hud-center-msg" id="hud-loading" hidden>Cargando modelos…</div>
       <div class="hud-center-msg hud-lock" id="hud-lock" hidden>Haz clic para controlar con el ratón</div>
 
       <div class="hud-bottom">
         <div class="battery" id="battery">
           <span class="battery-label">Linterna</span>
-          <div class="battery-bar"><i style="width:64%"></i></div>
+          <div class="battery-bar"><i style="width:100%"></i></div>
         </div>
 
         <ul class="inventory" id="inventory">
-          <li class="slot filled" data-item="linterna" title="Linterna"></li>
-          <li class="slot filled" data-item="llave" title="Llave oxidada"></li>
-          <li class="slot" data-item="tarjeta" title="Tarjeta de acceso"></li>
-          <li class="slot" data-item="martillo" title="Martillo"></li>
-          <li class="slot" data-item="nota" title="Nota arrugada"></li>
+          <li class="slot" data-item="battery" title="Batería (1): recarga la linterna"><kbd>1</kbd><b></b></li>
+          <li class="slot" data-item="medkit" title="Botiquín (2): recupera una vida"><kbd>2</kbd><b></b></li>
+          <li class="slot" data-item="holywater" title="Agua bendita (3): paraliza al monstruo cercano"><kbd>3</kbd><b></b></li>
         </ul>
 
         <div class="hud-hint">
           <kbd>WASD</kbd> Moverse · <kbd>Shift</kbd> Correr · <kbd>Ratón</kbd> Mirar<br />
-          <kbd>F</kbd> <span id="hud-action">Linterna</span> · <kbd>ESC</kbd> Pausa
+          <kbd>E</kbd> <span id="hud-interact">Recoger / usar</span> · <kbd>F</kbd> <span id="hud-action">Linterna</span> · <kbd>ESC</kbd> Pausa
+          <span id="hud-items-hint"><br /><kbd>1</kbd> Batería · <kbd>2</kbd> Botiquín · <kbd>3</kbd> Agua bendita</span>
         </div>
       </div>
     </div>
@@ -216,6 +311,33 @@
   </div>
 </div>
 
+<!-- ========================= OVERLAY: RESULTADO ========================= -->
+<div class="overlay" id="overlay-result" hidden>
+  <div class="overlay-card result-card">
+    <h2 id="result-title">Escapaste</h2>
+    <p class="muted" id="result-sub"></p>
+    <div class="result-points"><span id="result-points">0</span><small>puntos</small></div>
+    <dl class="result-stats" id="result-stats"></dl>
+
+    <div class="result-save" id="result-save">
+      <div class="guest-row" id="result-login" hidden>
+        <input class="field field-name" id="result-name" type="text" maxlength="20" placeholder="Tu nombre" autocomplete="nickname" />
+        <button class="btn" data-action="save-score">Guardar puntaje</button>
+      </div>
+      <p class="micro" id="result-status"></p>
+    </div>
+
+    <div class="social-btns center">
+      <button class="btn btn-social sb-fb" data-action="share" data-net="facebook">Compartir en Facebook</button>
+      <button class="btn btn-social sb-tw" data-action="share" data-net="x">Compartir en X</button>
+    </div>
+    <div class="result-actions">
+      <button class="btn btn-lg" data-action="play-again" id="btn-play-again">Jugar de nuevo</button>
+      <button class="btn btn-lg btn-ghost" data-action="result-menu">Menú principal</button>
+    </div>
+  </div>
+</div>
+
 <!-- ========================= OVERLAY: SALIR ========================= -->
 <div class="overlay" id="overlay-quit" hidden>
   <div class="overlay-card">
@@ -230,9 +352,11 @@
 <script type="importmap">
 { "imports": { "three": "./js/lib/three.module.min.js" } }
 </script>
+<script src="js/rules.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/net.js"></script>
+<script src="js/api.js"></script>
 <script type="module" src="js/scene3d.js"></script>
 <script src="js/app.js"></script>
 </body>

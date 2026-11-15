@@ -1,0 +1,3 @@
+<FilesMatch "^config\.local">
+  Require all denied
+</FilesMatch>

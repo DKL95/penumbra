@@ -2,16 +2,13 @@
 
 Proyecto de la UA **Gráficas Computacionales en Web** · Grupo 051 · Ago–Dic 2026
 
-Escape room de puzzles con terror. Un jugador busca la salida resolviendo acertijos
-mientras un monstruo con IA lo persigue. En multijugador uno controla al superviviente
-y otro al monstruo.
+Escape room de terror en WebGL (Three.js). El superviviente recorre escenarios a oscuras,
+junta 3 reliquias en cada uno y escapa, mientras un monstruo con IA (o un segundo jugador)
+lo caza. Estética Silent Hill: niebla densa, linterna y luces que fallan.
 
-> **Equipo:** el plan de lo que falta para el 2º avance está en [TAREAS-2DO-AVANCE.md](TAREAS-2DO-AVANCE.md).
+## Cómo abrirlo
 
-## Cómo abrirlo (2º avance)
-
-Desde el 2º avance el juego trae su propio servidor en **Node.js** (sirve los archivos
-y además mueve el multijugador por WebSocket). Requiere Node 18 o superior.
+Requiere **Node 18+**. Para la tabla global de puntajes también **PHP 8 + MySQL** (XAMPP sirve).
 
 ```
 npm install      # solo la primera vez (instala el paquete "ws")
@@ -20,95 +17,109 @@ npm start
 
 y abrir en **Google Chrome**: <http://localhost:8777>
 
-La consola del servidor también muestra la dirección en **red local**
-(p. ej. `http://192.168.1.50:8777`): así se juega desde dos computadoras en la misma red.
-Para probar en una sola computadora basta con abrir **dos pestañas o ventanas**.
+`npm start` levanta todo: los archivos del juego, el multijugador (WebSocket) y, si encuentra
+PHP (en el PATH o en `C:\xampp\php\php.exe`), el **servicio web PHP** en segundo plano (`/api/*`).
+La consola muestra también la dirección en red local para jugar desde dos computadoras.
 
-> Ya no sirve `python -m http.server`: sin `npm start` no hay multijugador.
+### Configurar MySQL y Facebook (una vez)
+
+1. Copia `api/config.local.example.php` como `api/config.local.php` (no se sube al repo).
+2. Pon el usuario y la contraseña de tu MySQL. La base `penumbra` y sus tablas se crean
+   solas la primera vez (el esquema está en `api/sql/schema.sql` por si se quiere crear a mano).
+3. Para **Facebook Login**: en <https://developers.facebook.com/apps> crea o usa tu app,
+   copia el **App ID** (y de preferencia el **App Secret**) en `config.local.php`, y en
+   *Inicio de sesión con Facebook → Configuración* agrega `http://localhost:8777/`.
+
+Sin MySQL el juego funciona igual: los puntajes se guardan en este equipo (LocalStorage) y la
+pantalla de puntajes avisa que está sin conexión. ¿Prefieres Apache de XAMPP en lugar de
+`php -S`? Copia el proyecto a `htdocs/penumbra` y arranca con
+`PHP_URL=http://localhost/penumbra/api npm start`.
 
 ## Cómo jugar
 
 | Modo | Cómo |
 |---|---|
-| Un jugador | Menú → **Jugar**. Eres el superviviente; el monstruo lo controla la computadora (ronda por toda la mansión y te persigue si te ve). |
-| Multijugador | Menú → **Multijugador**. Uno pulsa **Crear sala** (será el **superviviente**) y le pasa el código de 4 letras al otro, que lo escribe en **Unirse** (será el **monstruo**). Al juntarse, los dos entran a la partida. |
+| **Escape** | Menú → Jugar → Escape. Campaña de los **3 escenarios** en orden. En cada uno junta 3 reliquias y abre la salida. Vida, inventario y batería pasan contigo. |
+| **Supervivencia** | Menú → Jugar → Supervivencia + escenario. No hay salida: las reliquias reaparecen sin fin y el monstruo acelera con cada una. Puntúan las reliquias y el tiempo. |
+| **Multijugador** | Menú → Multijugador. El anfitrión elige escenario y dificultad y es el **superviviente**; quien se une con el código es el **monstruo**. Gana el superviviente si escapa; el monstruo, si le quita todas las vidas. |
 
-Controles: **WASD** moverse · **Shift** correr · **ratón** mirar (clic en la escena para
-capturarlo) · **F** linterna (superviviente) / rugido (monstruo) · **ESC** pausa.
+Controles: **WASD** moverse · **Shift** correr · **ratón** mirar (clic para capturarlo) ·
+**E** recoger / abrir (monstruo: atacar, también con clic) · **F** linterna (monstruo: rugir) ·
+**1 / 2 / 3** usar batería / botiquín / agua bendita · **ESC** pausa.
 
-## Rúbrica del 2º avance (100 pts · 15 %)
+### Ítems
+
+| Ítem | Efecto |
+|---|---|
+| Reliquia (fragmento de llave · fusible · piedra rúnica) | Objetivo del escenario: con 3 se abre la salida. |
+| Batería (1) | Recarga 60 % de la linterna. |
+| Botiquín (2) | Recupera una vida. |
+| Agua bendita (3) | Paraliza 5 s al monstruo si está a menos de 5 m (también al monstruo-jugador). |
+
+### Dificultades (no dependen del tiempo)
+
+| | Normal | Oscuro | Apagón |
+|---|---|---|---|
+| Vidas | 3 | 2 | 1 |
+| Monstruo (ronda / persecución) | 1.25 / 1.6 m/s | 1.45 / 1.95 m/s | 1.6 / 2.25 m/s |
+| Visión del monstruo | 4.5 m | 6.5 m | 8 m |
+| Oído del monstruo | — | te oye correr a 6 m | correr a 9 m, caminar a 3 m |
+| Linterna | se recarga apagada | gasta más, recarga lenta | gasta el doble, **no** se recarga sola |
+| Niebla / ítems de ayuda | normal / todos | más densa / menos | máxima / casi ninguno |
+| Puntaje | ×1 | ×1.5 | ×2.2 |
+
+La linterna encendida ayuda a ver, pero el monstruo te detecta de más lejos.
+
+## Rúbrica de la 3ª entrega (100 pts · 70 %)
 
 | Requisito | Dónde está |
 |---|---|
-| 4 ejercicios realizados en clase (30) | Los entrega cada integrante (no forman parte de este repositorio). |
-| **Funcionamiento de modo multijugador** (50) | `server.js` (salas por código, máx. 2 jugadores, reenvío de estado) + `js/net.js` (cliente WebSocket). Cada jugador ve al otro moverse y animarse en tiempo real (15 actualizaciones/s con interpolación); los eventos de linterna y rugido también se sincronizan; avisos al entrar o salir el rival y ping en el HUD. |
-| **Modelos con texturas y animaciones cargados con WebGL** (20) | `js/characters.js`: modelos **GLTF/GLB** cargados con `GLTFLoader` y animados con `AnimationMixer` (idle / caminar / correr con transiciones suaves, velocidad de animación ajustada a la de movimiento). **Superviviente** = `Rogue_Hooded.glb`, personaje low-poly de KayKit con su textura (se le ocultan las armas y lleva una linterna en la mano). **Monstruo** = figura alta y delgada tipo Slenderman, toda negra, modelada por nosotros con primitivas de Three.js (cilindros, cajas y esferas) organizadas en una jerarquía de pivotes (cadera/rodilla, hombro/codo) y animada por código: la caminata/carrera usa senos sincronizados con la velocidad y, quieto, respira y ladea la cabeza. El escenario conserva sus texturas y animaciones (fuego, péndulo, candelabros, foco que falla, polvo). |
+| Ejercicios de clase (30) | Los entrega cada integrante (no forman parte del repositorio). |
+| Menú, configuración, puntuaciones, pausa (8) | `index.html` + `js/app.js`: `#screen-menu`, `#screen-play`, `#screen-settings`, `#screen-scores`, `#overlay-pause`, `#overlay-result`. |
+| Colisiones + iluminación ambiental y focal (4) | `js/scene3d.js` (`collide`, `pushOut`, `wallBetween`, cámara por zonas). En cada escenario: `AmbientLight` + `HemisphereLight` y luces focales (velas, chimenea, fluorescentes, lámpara quirúrgica `SpotLight`, fogata, luna `DirectionalLight` con sombras, linterna `SpotLight`). |
+| 2 niveles de dificultad sin usar el tiempo (10) | `js/rules.js` (`DIFFICULTY`): Normal / Oscuro / Apagón cambian vidas, velocidad, visión y oído de la IA, batería, niebla e ítems disponibles. |
+| 3 escenarios totalmente distintos (10) | Mansión Ravenwood (`js/scene3d.js`, interior victoriano), Hospital San Judas (`js/levels/hospital.js`, hospital abandonado), Bosque de Ceniza (`js/levels/forest.js`, exterior nocturno con árboles `InstancedMesh`). Cada uno en su propia `THREE.Scene`, con texturas, niebla, luces, sonido y partículas propias. |
+| 2 modos de juego distintos (10) | Escape (campaña) y Supervivencia (reliquias infinitas), además del Multijugador versus. |
+| Servicio web + red social (4) | Servicio **PHP** en `api/` (`auth.php`, `scores.php`, `public.php`) con **MySQL** (`api/sql/schema.sql`), consumido con `fetch` desde `js/api.js`. El servidor **recalcula** los puntos (`api/lib/rules.php`). **Facebook Login** con el SDK de JS y el token verificado en PHP contra la Graph API. Compartir el resultado en Facebook y X. Almacenamiento local: `localStorage` (configuración, sesión, puntajes sin conexión). |
+| Sonido y música + 3 ítems (10) | `js/audio.js`: música de fondo distinta por escenario (drone + melodía generativa con eco), latido y cuerdas de tensión según la distancia al monstruo, pasos según el suelo, efectos de ítems, golpes, cerraduras, victoria y derrota. Ítems: batería, botiquín, agua bendita (+ reliquias). |
+| Multijugador en tiempo real (10) | `server.js` + `js/net.js`: posiciones a 15 Hz con interpolación y eventos de partida (recoger, vida, golpe, agua bendita, fin) sincronizados. |
+| *(Opcional)* Partículas + IA (4) | Partículas: polvo, chispas de un fluorescente roto, ceniza y brasas, destello del agua bendita. IA: el monstruo ronda, te **ve** (distancia + línea de visión sin muros, más lejos si llevas la linterna), te **oye** según la dificultad, te persigue, ataca y busca donde te vio por última vez. |
 
-Extras que adelantan la entrega final: **colisiones** con paredes y mobiliario, entre
-los dos personajes, y de la cámara contra los muros. Linterna como **luz focal** con
-batería. **IA** básica del monstruo en modo un jugador.
+## Pruebas
 
-## Qué incluía el 1er avance
+```
+npm test
+```
 
-Interfaz (la rúbrica del 1er avance no pedía 3D todavía):
-
-| Pantalla | Archivo / sección |
-|---|---|
-| Menú principal | `#screen-menu` |
-| Multijugador (crear / unirse por código) | `#screen-multiplayer` |
-| Puntajes (tabla + login social maqueta) | `#screen-scores` |
-| Configuración (volumen, música, dificultad, calidad, sensibilidad) | `#screen-settings` |
-| Menú de pausa (ESC dentro del juego) | `#overlay-pause` |
-| Pantalla de juego con HUD (objetivo, inventario, linterna, retícula) | `#screen-game` |
-
-- **Estilos:** `css/styles.css` — paleta de terror, niebla, grano de película, parpadeo.
-- **Imágenes:** `assets/scene-mansion.svg` (escena de fondo) + iconos SVG del inventario.
-- **Audio:** `js/audio.js` — ambiente y efectos generados con Web Audio API (sin archivos).
-  Se reemplazará por música/efectos reales más adelante.
-- **Almacenamiento local:** `js/settings.js` — la configuración se guarda en `localStorage`
-  (adelanta el requisito de LocalStorage de la UA).
-- **Escenario 3D (WebGL / Three.js):** `js/scene3d.js` — la Mansión Ravenwood (estudio →
-  pasillo → gran salón con comedor, piano, armaduras, escalera y ventanales) construida **solo con figuras básicas** (cajas, cilindros, planos, esferas,
-  conos, toros) y texturas procedurales dibujadas en `<canvas>`. Iluminación ambiental +
-  focal (chimenea, lámpara, velas) + luz de luna. En el 1er avance era solo una vista
-  cinemática; desde el 2º avance se juega en tercera persona.
-  Three.js va incluido en `js/lib/` (funciona sin internet).
+46 pruebas con `node --test`: reglas y puntaje (`test/rules.test.js`), servicio web PHP de punta a
+punta con una base SQLite temporal, incluida la igualdad de la fórmula de puntaje JS = PHP
+(`test/api.test.js`, se omite si no hay PHP), y multijugador (`test/multiplayer.test.js`).
 
 ## Estructura
 
 ```
-server.js                servidor Node: archivos estáticos + salas multijugador (WebSocket)
-package.json             dependencia "ws" y script npm start
-index.html
-css/styles.css
-js/app.js                navegación entre pantallas, pausa, flujo de salas
-js/net.js                cliente WebSocket (crear / unirse / estado / eventos)
-js/scene3d.js            escenario 3D, control en 3ª persona, colisiones, red
-js/characters.js         carga de modelos GLTF, texturas y animaciones
-js/audio.js              audio procedural (Web Audio API)
-js/settings.js           configuración persistente (localStorage)
-js/lib/three.module.min.js         Three.js r160 (vendorizado, offline)
-js/lib/addons/loaders/GLTFLoader.js   addon oficial de Three.js r160
-js/lib/addons/loaders/OBJLoader.js    addon oficial de Three.js r160 (modelos .obj)
-js/lib/addons/loaders/MTLLoader.js    addon oficial de Three.js r160 (materiales .mtl)
-js/lib/addons/loaders/ColladaLoader.js  addon oficial de Three.js r160 (modelos .dae)
-js/lib/addons/loaders/TGALoader.js    addon oficial de Three.js r160 (lo usa ColladaLoader)
-js/lib/addons/utils/*.js              BufferGeometryUtils y SkeletonUtils (r160)
-assets/models/Rogue_Hooded.glb  superviviente (KayKit Adventurers, Kay Lousberg, CC0)
-assets/models/lampara/          lámpara de bola (OBJ + MTL, Avonni Lighting)
-assets/models/album/            álbum "Scrapbook" (OBJ + MTL + PNG)
-assets/models/libros/           libro "Doom Book" (OBJ + MTL + PNG)
-assets/models/libro-rojo/       libro rojo (OBJ + MTL + PNG)
-assets/models/banana/           racimo de plátanos (OBJ + MTL + PNG)
-assets/models/arana/            araña con esqueleto (Collada .dae + PNG)
-assets/scene-mansion.svg
+server.js                servidor Node: estáticos + salas WebSocket + proxy /api → PHP
+index.html · css/styles.css
+js/app.js                pantallas, partida, resultado, puntajes, sesión, compartir
+js/rules.js              dificultades, ítems, modos, escenarios y puntaje (lógica pura)
+js/scene3d.js            motor: niveles, Mansión, partida, IA, cámara, colisiones, red
+js/levels/hospital.js    escenario 2
+js/levels/forest.js      escenario 3
+js/characters.js         superviviente GLTF animado + monstruo procedural
+js/audio.js              música y efectos (Web Audio API)
+js/net.js                cliente WebSocket
+js/api.js                cliente del servicio web (fetch) + Facebook SDK + LocalStorage
+js/settings.js           configuración persistente (LocalStorage)
+js/lib/                  Three.js r160 y addons oficiales (vendorizados, offline)
+api/auth.php             inicio de sesión (Facebook / invitado), sesión por token
+api/scores.php           guardar y listar puntajes
+api/public.php           estado del servicio y App ID de Facebook
+api/lib/                 configuración, PDO/MySQL, fórmula de puntaje
+api/sql/schema.sql       esquema MySQL (usuarios, sesiones, puntajes)
+api/config.local.example.php   plantilla de credenciales
+assets/models/           modelos GLB, OBJ/MTL y Collada
+test/                    pruebas automáticas
 ```
-
-## Pendiente para los siguientes avances
-
-- 3ª entrega: colisiones, 2 niveles de dificultad, 3 escenarios, 2 modos de juego,
-  3+ ítems, servicio web + BD (MySQL/SQL Server), login social real, sonido final,
-  multijugador en tiempo real, (opcional) partículas + IA.
 
 ## Créditos de modelos
 
@@ -116,14 +127,12 @@ assets/scene-mansion.svg
   (<https://kaylousberg.com>), licencia CC0.
 - **Monstruo:** figura tipo Slenderman modelada por el equipo con primitivas de Three.js
   y animada por código (`js/characters.js`).
-- **Lámpara de bola:** modelo OBJ + MTL de Avonni Lighting (<http://www.avonni.com>),
-  cargado con `OBJLoader` + `MTLLoader` y colocado sobre las cajas de la esquina del
-  estudio (`buildBallLamp` en `js/scene3d.js`).
-- **Utilería del estudio** (`buildProps` en `js/scene3d.js`, cargada con `OBJLoader` + `MTLLoader`):
-  álbum *Scrapbook*, *Doom Book* y libro rojo de *Resident Evil: Deadly Silence* (DS, Capcom) y
-  racimo de plátanos de *Let's Go Island: Lost on the Island of Tropics* (Arcade, Sega).
-- **Araña:** de *Seaman* (Dreamcast, Sega/Vivarium), Collada con esqueleto cargada con
-  `ColladaLoader`; trepa por la pared del pasillo y sus patas se animan por código rotando
-  los huesos (`buildSpider` / `updateSpider` en `js/scene3d.js`).
+- **Lámpara de bola:** modelo OBJ + MTL de Avonni Lighting (<http://www.avonni.com>).
+- **Utilería del estudio:** álbum *Scrapbook*, *Doom Book* y libro rojo de *Resident Evil:
+  Deadly Silence* (DS, Capcom) y racimo de plátanos de *Let's Go Island: Lost on the Island of
+  Tropics* (Arcade, Sega).
+- **Araña:** de *Seaman* (Dreamcast, Sega/Vivarium), Collada con esqueleto animada por código.
 - Los modelos de juegos comerciales se obtuvieron de The Models Resource y se usan solo con
   fines académicos; sus derechos pertenecen a sus respectivas compañías.
+- Hospital, bosque, ítems y el resto de la utilería: figuras básicas de Three.js con texturas
+  procedurales hechas por el equipo.

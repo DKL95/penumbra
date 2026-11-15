@@ -56,15 +56,7 @@ const Settings = (() => {
       Sound.setVolumes(current.volume / 100, current.music / 100);
     }
     document.documentElement.dataset.quality = current.quality;
-
-    // refleja dificultad en el HUD de la maqueta
-    const diffLabel = {
-      normal: "Normal",
-      dark: "Oscuro",
-      blackout: "Apagón",
-    }[current.difficulty] || "Normal";
-    const el = document.getElementById("hud-difficulty");
-    if (el) el.textContent = diffLabel;
+    // la dificultad la lee js/scene3d.js al empezar cada partida
   }
 
   return { load, save, reset, get, DEFAULTS };

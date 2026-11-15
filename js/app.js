@@ -1,19 +1,16 @@
 /* =========================================================
    PENUMBRA — Controlador de interfaz
-   Navegación entre pantallas, menú de pausa, overlays,
-   salas de multijugador (js/net.js) y puntajes (maqueta).
+   Navegación entre pantallas, elección de modo / escenario /
+   dificultad, menú de pausa, salas de multijugador (js/net.js),
+   pantalla de resultado, puntajes y sesión (js/api.js →
+   servicio web PHP + MySQL, Facebook Login) y compartir.
    ========================================================= */
 
 (() => {
-  const screens = {
-    menu: document.getElementById("screen-menu"),
-    game: document.getElementById("screen-game"),
-    multiplayer: document.getElementById("screen-multiplayer"),
-    scores: document.getElementById("screen-scores"),
-    settings: document.getElementById("screen-settings"),
-  };
   const pauseOverlay = document.getElementById("overlay-pause");
   const quitOverlay = document.getElementById("overlay-quit");
+  const resultOverlay = document.getElementById("overlay-result");
+  const $ = (id) => document.getElementById(id);
 
   let currentId = "screen-menu";
   let history = [];
@@ -29,13 +26,12 @@
   function safeCanvas(action, arg) {
     try {
       if (window.GameCanvas && typeof GameCanvas[action] === "function") {
-        GameCanvas[action](arg);
-      } else {
-        console.warn(
-          "[PENUMBRA] Escenario 3D no disponible: sirve el proyecto con un " +
-          "servidor HTTP (ver README), no lo abras con doble clic."
-        );
+        return GameCanvas[action](arg);
       }
+      console.warn(
+        "[PENUMBRA] Escenario 3D no disponible: sirve el proyecto con " +
+        "npm start (ver README), no lo abras con doble clic."
+      );
     } catch (err) {
       console.error("[PENUMBRA] Error en el escenario 3D:", err);
     }
@@ -43,12 +39,12 @@
 
   /* ---------------- Navegación ---------------- */
   function showScreen(id, { push = true } = {}) {
-    const next = document.getElementById(id);
+    const next = $(id);
     if (!next || id === currentId) return;
 
     if (push) history.push(currentId);
 
-    document.getElementById(currentId)?.classList.remove("active");
+    $(currentId)?.classList.remove("active");
     next.classList.add("active");
     currentId = id;
 
@@ -56,15 +52,16 @@
     document.body.classList.toggle("in-game", inGame);
 
     if (inGame) {
-      safeCanvas("start");
       Sound.stopAmbient();
+      safeCanvas("start");
     } else {
       safeCanvas("stop");
       if (id === "screen-menu") Sound.startAmbient();
     }
 
-    if (id === "screen-scores") renderScores();
+    if (id === "screen-scores") { renderAccount(); loadScores(); }
     if (id === "screen-settings") fillSettingsForm();
+    if (id === "screen-play") fillPlayScreen();
   }
 
   function goBack() {
@@ -88,7 +85,8 @@
   /* ---------------- Pausa ---------------- */
   let pausedAt = 0;
   function openPause() {
-    if (currentId !== "screen-game" || paused) return;
+    if (currentId !== "screen-game" || paused || !resultOverlay.hidden) return;
+    if (window.GameCanvas && GameCanvas.over) return;
     paused = true;
     pausedAt = performance.now();
     pauseOverlay.hidden = false;
@@ -102,6 +100,7 @@
   function exitToMenu() {
     paused = false;
     pauseOverlay.hidden = true;
+    resultOverlay.hidden = true;
     safeCanvas("end");
     if (window.Net) Net.leave();
     resetMultiplayerScreen();
@@ -114,6 +113,7 @@
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (!resultOverlay.hidden) return;
     if (currentId === "screen-game") {
       // el mismo ESC que soltó el ratón no debe cerrar la pausa recién abierta
       if (paused && performance.now() - pausedAt < 400) return;
@@ -125,10 +125,34 @@
     }
   });
 
+  /* ---------------- Jugar: modo, escenario y dificultad ---------------- */
+  const play = { game: "escape", scenario: "mansion", difficulty: "normal" };
+
+  function fillPlayScreen() {
+    play.difficulty = Settings.get().difficulty;
+    syncPicks();
+  }
+  function syncPicks() {
+    document.querySelectorAll("#pick-mode .pick").forEach((b) => b.classList.toggle("selected", b.dataset.mode === play.game));
+    document.querySelectorAll("#pick-difficulty .pick").forEach((b) => b.classList.toggle("selected", b.dataset.difficulty === play.difficulty));
+    const scen = $("pick-scenario");
+    const escape = play.game === "escape";
+    scen.classList.toggle("all", escape);
+    scen.querySelectorAll(".pick").forEach((b) => b.classList.toggle("selected", escape || b.dataset.scenario === play.scenario));
+    $("pick-scenario-note").textContent = escape ? "(Escape recorre los tres en orden)" : "(elige uno)";
+  }
+  function startGame() {
+    Sound.confirm();
+    Settings.save({ difficulty: play.difficulty });
+    safeCanvas("configure", { mode: "solo", game: play.game, scenario: play.scenario, role: "survivor", difficulty: play.difficulty });
+    history = ["screen-menu"];
+    showScreen("screen-game", { push: false });
+  }
+
   /* ---------------- Multijugador (WebSocket, js/net.js) ---------------- */
-  const hostStatus = document.getElementById("mp-host-status");
-  const joinStatus = document.getElementById("mp-join-status");
-  const codeBox = document.getElementById("mp-code");
+  const hostStatus = $("mp-host-status");
+  const joinStatus = $("mp-join-status");
+  const codeBox = $("mp-code");
 
   function setStatus(el, html, kind = "") {
     el.innerHTML = html;
@@ -137,28 +161,36 @@
   }
   function resetMultiplayerScreen() {
     codeBox.textContent = "— — — —";
-    setStatus(hostStatus, "Serás el <b>superviviente</b>.");
-    setStatus(joinStatus, "Serás el <b>monstruo</b>.");
+    setStatus(hostStatus, "Serás el <b>superviviente</b>: junta 3 reliquias y escapa.");
+    setStatus(joinStatus, "Serás el <b>monstruo</b>: atrápalo antes de que escape.");
+    $("mp-scenario").disabled = $("mp-difficulty").disabled = false;
   }
+  const settingsLabel = (s) => s
+    ? `${Rules.SCENARIOS[s.scenario].label} · ${Rules.difficulty(s.difficulty).label}` : "";
 
   function enterMultiplayerGame(role) {
-    safeCanvas("configure", { mode: "mp", role });
+    const s = Net.info.settings || { scenario: "mansion", difficulty: "normal" };
+    safeCanvas("configure", { mode: "mp", game: "versus", role, scenario: s.scenario, difficulty: s.difficulty });
     history = ["screen-menu"];
     showScreen("screen-game");
+  }
+
+  function playerName() {
+    return Api.user ? Api.user.name : undefined;
   }
 
   async function generateCode() {
     Sound.confirm();
     setStatus(hostStatus, "Conectando con el servidor…");
     try {
-      await Net.create();
+      await Net.create(playerName(), { scenario: $("mp-scenario").value, difficulty: $("mp-difficulty").value });
     } catch (err) {
       Sound.error();
       setStatus(hostStatus, err.message, "err");
     }
   }
   async function joinGame() {
-    const input = document.getElementById("mp-join");
+    const input = $("mp-join");
     const val = input.value.trim().toUpperCase();
     if (val.length !== 4) {
       Sound.error();
@@ -168,7 +200,7 @@
     Sound.confirm();
     setStatus(joinStatus, `Conectando a la partida <b>${val}</b>…`);
     try {
-      await Net.join(val);
+      await Net.join(val, playerName());
     } catch (err) {
       Sound.error();
       setStatus(joinStatus, err.message, "err");
@@ -177,7 +209,8 @@
 
   Net.on("created", (m) => {
     codeBox.textContent = m.code.split("").join(" ");
-    setStatus(hostStatus, "Sala creada. Esperando a que se una el monstruo…", "ok");
+    $("mp-scenario").disabled = $("mp-difficulty").disabled = true;
+    setStatus(hostStatus, `Sala creada (${settingsLabel(m.settings)}). Esperando a que se una el monstruo…`, "ok");
   });
   Net.on("peer-join", (m) => {
     if (currentId !== "screen-multiplayer") return;   // ya en juego: lo maneja la escena
@@ -186,8 +219,8 @@
     setTimeout(() => enterMultiplayerGame(Net.info.role), 700);
   });
   Net.on("joined", (m) => {
-    setStatus(joinStatus, `Dentro de la partida <b>${m.code}</b>.`, "ok");
-    setTimeout(() => enterMultiplayerGame(m.role), 500);
+    setStatus(joinStatus, `Dentro de la partida <b>${m.code}</b> — ${settingsLabel(m.settings)}.`, "ok");
+    setTimeout(() => enterMultiplayerGame(m.role), 900);
   });
   Net.on("error", (m) => {
     Sound.error();
@@ -200,24 +233,190 @@
     }
   });
 
-  /* ---------------- Puntajes (datos de ejemplo) ---------------- */
-  const SAMPLE_SCORES = [
-    ["V1LL4Nuev4", "Mansión Ravenwood", "Oscuro", "04:12"],
-    ["kr3nz", "Hospital San Judas", "Normal", "05:03"],
-    ["la_bruja_07", "Mansión Ravenwood", "Apagón", "06:44"],
-    ["DZ", "Bosque de Ceniza", "Oscuro", "07:20"],
-    ["invitado", "Hospital San Judas", "Normal", "08:57"],
-  ];
-  function renderScores() {
-    const body = document.getElementById("scores-body");
-    body.innerHTML = SAMPLE_SCORES
-      .map(([name, scene, diff, time], i) =>
-        `<tr><td>${i + 1}</td><td>${name}</td><td>${scene}</td><td>${diff}</td><td>${time}</td></tr>`)
-      .join("");
+  /* ---------------- Resultado de la partida ---------------- */
+  let lastResult = null;
+  const TITLES = {
+    escaped: ["Escapaste", "Saliste con vida… por ahora."],
+    caught: ["Te atraparon", "La penumbra te reclamó."],
+    won: ["Lo atrapaste", "El superviviente no volverá a ver la luz."],
+    lost: ["Escapó", "El superviviente encontró la salida."],
+    abandon: ["Partida terminada", "Tu rival abandonó la partida."],
+  };
+
+  window.addEventListener("penumbra:result", (e) => {
+    const s = e.detail;
+    lastResult = s;
+    const [title, sub] = TITLES[s.result] || TITLES.abandon;
+    $("result-title").textContent = title;
+    $("result-sub").textContent = s.mode === "survival"
+      ? `Juntaste ${s.relics} ${s.relics === 1 ? "reliquia" : "reliquias"} en ${Rules.formatTime(s.seconds)}.` : sub;
+    $("result-title").className = s.won ? "win" : "lose";
+    $("result-points").textContent = s.points.toLocaleString("es-MX");
+    const rows = [
+      ["Modo", Rules.MODES[s.mode].label],
+      ["Escenario", s.scenario === "campaign" ? `Campaña · llegaste a ${s.reached}` : s.scenarioLabel],
+      ["Dificultad", Rules.difficulty(s.difficulty).label],
+      ["Tiempo", Rules.formatTime(s.seconds)],
+      ["Reliquias", String(s.relics)],
+    ];
+    if (s.mode === "escape" && s.role === "survivor") rows.push(["Escenarios superados", `${s.levels}/${s.levelsPlayed}`]);
+    $("result-stats").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+    $("btn-play-again").textContent = s.mode === "versus" ? "Otra sala" : "Jugar de nuevo";
+    paused = false;
+    pauseOverlay.hidden = true;
+    resultOverlay.hidden = false;
+    if (s.mode === "versus" && window.Net) Net.leave();
+    prepareSave();
+  });
+
+  function prepareSave() {
+    const s = lastResult;
+    const status = $("result-status");
+    status.className = "micro";
+    $("result-login").hidden = true;
+    if (!s || s.result === "abandon" || s.points <= 0) {
+      status.textContent = s && s.result === "abandon" ? "Sin puntaje: la partida no terminó." : "Sin puntos esta vez.";
+      return;
+    }
+    if (Api.user) return saveScore();
+    $("result-login").hidden = false;
+    $("result-name").value = localStorage.getItem("penumbra.lastName") || "";
+    status.textContent = "Escribe tu nombre para entrar a la tabla global (o inicia sesión con Facebook en Puntajes).";
+  }
+
+  async function saveScore() {
+    const s = lastResult;
+    const status = $("result-status");
+    if (!s) return;
+    try {
+      if (!Api.user) {
+        const name = $("result-name").value.trim();
+        if (name.length < 2) { Sound.error(); status.textContent = "El nombre debe tener al menos 2 letras."; return; }
+        try { localStorage.setItem("penumbra.lastName", name); } catch { /* sin almacenamiento */ }
+        status.textContent = "Guardando…";
+        await Api.loginGuest(name);
+      }
+      status.textContent = "Guardando…";
+      const r = await Api.submit(s);
+      $("result-login").hidden = true;
+      status.textContent = `Guardado en la tabla global como ${Api.user.name}: lugar #${r.rank} en ${Rules.MODES[s.mode].label}` +
+        (r.best > r.points ? ` (tu récord: ${r.best.toLocaleString("es-MX")}).` : ". ¡Nuevo récord personal!");
+      status.classList.add("ok");
+      Sound.confirm();
+    } catch (err) {
+      status.textContent = `${err.message} El puntaje quedó guardado en este equipo.`;
+      status.classList.add("err");
+    }
+  }
+
+  function shareResult(net) {
+    const s = lastResult;
+    const url = location.origin + location.pathname;
+    const text = s
+      ? `${s.won ? "Sobreviví" : "No sobreviví"} en PENUMBRA (${Rules.MODES[s.mode].label}, ${Rules.difficulty(s.difficulty).label}): ${s.points.toLocaleString("es-MX")} puntos. ¿Te atreves?`
+      : "Juega PENUMBRA, un escape room de terror.";
+    const href = net === "facebook"
+      ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&hashtag=${encodeURIComponent("#PENUMBRA")}`
+      : `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}&hashtags=PENUMBRA`;
+    window.open(href, "share", "width=620,height=520,noopener");
+  }
+
+  function playAgain() {
+    resultOverlay.hidden = true;
+    if (lastResult && lastResult.mode === "versus") {
+      safeCanvas("end");
+      resetMultiplayerScreen();
+      history = ["screen-menu"];
+      showScreen("screen-multiplayer", { push: false });
+      return;
+    }
+    safeCanvas("restart");
+  }
+
+  /* ---------------- Puntajes (servicio web) ---------------- */
+  const scoreFilter = { mode: "escape", difficulty: "" };
+  let scoresReq = 0;
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  async function loadScores() {
+    const req = ++scoresReq;
+    const body = $("scores-body");
+    body.innerHTML = `<tr><td colspan="6" class="muted">Cargando…</td></tr>`;
+    const r = await Api.list({ ...scoreFilter, limit: 10 });
+    if (req !== scoresReq) return;
+    $("scores-source").textContent = r.source === "remote"
+      ? "Tabla global — servicio web PHP + MySQL."
+      : `Sin conexión con el servicio web (${r.error}). Mostrando los puntajes de este equipo.`;
+    if (!r.scores.length) {
+      body.innerHTML = `<tr><td colspan="6" class="muted">Todavía no hay puntajes en este modo. ¡Sé el primero!</td></tr>`;
+      return;
+    }
+    body.innerHTML = r.scores.map((s) => {
+      const scen = s.scenario === "campaign" ? "Campaña" : (Rules.SCENARIOS[s.scenario] || {}).label || s.scenario;
+      const who = (s.photo ? `<img class="avatar" src="${esc(s.photo)}" alt="" referrerpolicy="no-referrer" />` : "") +
+        esc(s.name) + (s.provider === "facebook" ? ' <span class="fb-dot" title="Facebook">f</span>' : "") +
+        (s.role === "monster" ? ' <span class="tag tag-monster">monstruo</span>' : "");
+      return `<tr><td>${s.rank}</td><td>${who}</td><td>${esc(scen)}</td><td>${esc(Rules.difficulty(s.difficulty).label)}</td>` +
+        `<td>${Rules.formatTime(s.seconds)}</td><td>${Number(s.points).toLocaleString("es-MX")}</td></tr>`;
+    }).join("");
+  }
+
+  /* ---------------- Sesión (invitado / Facebook) ---------------- */
+  function renderAccount() {
+    const u = Api.user;
+    $("login-box").hidden = !!u;
+    $("user-box").hidden = !u;
+    if (u) {
+      $("user-name").textContent = u.name;
+      $("user-provider").textContent = u.provider === "facebook" ? "Sesión con Facebook" : "Invitado";
+      const img = $("user-photo");
+      img.hidden = !u.photo;
+      if (u.photo) { img.src = u.photo; img.referrerPolicy = "no-referrer"; }
+    }
+    $("menu-user").textContent = u ? `Sesión: ${u.name}` : "";
+  }
+  Api.onChange(renderAccount);
+
+  async function loginFacebook() {
+    Sound.confirm();
+    const st = $("social-status");
+    st.className = "micro";
+    st.textContent = "Abriendo Facebook…";
+    try {
+      const u = await Api.loginFacebook();
+      st.textContent = `¡Hola, ${u.name}! Tus puntajes se guardarán en la tabla global.`;
+      st.classList.add("ok");
+    } catch (err) {
+      Sound.error();
+      st.textContent = err.message;
+      st.classList.add("err");
+    }
+  }
+  async function loginGuest() {
+    const st = $("social-status");
+    const name = $("guest-name").value.trim();
+    st.className = "micro";
+    if (name.length < 2) { Sound.error(); st.textContent = "Escribe un nombre de al menos 2 letras."; st.classList.add("err"); return; }
+    Sound.confirm();
+    try {
+      const u = await Api.loginGuest(name);
+      try { localStorage.setItem("penumbra.lastName", name); } catch { /* sin almacenamiento */ }
+      st.textContent = `Entraste como ${u.name}.`;
+      st.classList.add("ok");
+    } catch (err) {
+      Sound.error();
+      st.textContent = err.message;
+      st.classList.add("err");
+    }
+  }
+  async function logout() {
+    Sound.back();
+    await Api.logout();
+    $("social-status").textContent = "Sesión cerrada.";
   }
 
   /* ---------------- Configuración ---------------- */
-  const form = document.getElementById("settings-form");
+  const form = $("settings-form");
 
   function fillSettingsForm() {
     const s = Settings.get();
@@ -227,7 +426,7 @@
     form.quality.value = s.quality;
     form.sensitivity.value = s.sensitivity;
     syncOutputs();
-    document.getElementById("settings-status").textContent = "";
+    $("settings-status").textContent = "";
   }
   function syncOutputs() {
     form.querySelectorAll("output[data-for]").forEach((o) => {
@@ -250,9 +449,12 @@
       quality: form.quality.value,
       sensitivity: +form.sensitivity.value,
     });
+    safeCanvas("applyQuality");
     Sound.confirm();
-    const st = document.getElementById("settings-status");
-    st.textContent = "Configuración guardada en este equipo.";
+    const st = $("settings-status");
+    st.textContent = settingsOpenedFromPause
+      ? "Guardado. La dificultad nueva aplica desde la siguiente partida."
+      : "Configuración guardada en este equipo.";
     st.classList.add("ok");
     setTimeout(() => st.classList.remove("ok"), 2000);
   }
@@ -260,14 +462,7 @@
     Settings.reset();
     fillSettingsForm();
     Sound.back();
-    document.getElementById("settings-status").textContent = "Valores restablecidos.";
-  }
-
-  /* ---------------- Redes sociales (maqueta) ---------------- */
-  function socialLogin(net) {
-    Sound.confirm();
-    const status = document.getElementById("social-status");
-    status.textContent = `Sesión con ${net} pendiente de integrar (servicio web · 3ª entrega).`;
+    $("settings-status").textContent = "Valores restablecidos.";
   }
 
   /* ---------------- Salir ---------------- */
@@ -285,6 +480,24 @@
 
   /* ---------------- Delegación de eventos ---------------- */
   document.addEventListener("click", (e) => {
+    const pick = e.target.closest(".pick");
+    if (pick) {
+      Sound.click();
+      if (pick.dataset.mode) play.game = pick.dataset.mode;
+      if (pick.dataset.scenario && play.game !== "escape") play.scenario = pick.dataset.scenario;
+      if (pick.dataset.difficulty) play.difficulty = pick.dataset.difficulty;
+      syncPicks();
+      return;
+    }
+    const tab = e.target.closest(".tab");
+    if (tab) {
+      Sound.click();
+      scoreFilter.mode = tab.dataset.mode;
+      document.querySelectorAll("#scores-tabs .tab").forEach((t) => t.classList.toggle("selected", t === tab));
+      loadScores();
+      return;
+    }
+
     const el = e.target.closest("[data-action]");
     if (!el) return;
     const action = el.dataset.action;
@@ -296,17 +509,21 @@
           pauseOverlay.hidden = true;
         }
         Sound.click();
-        // "Jugar" desde el menú = partida de un jugador contra el monstruo de la IA
-        if (el.dataset.target === "screen-game" && !el.dataset.fromPause)
-          safeCanvas("configure", { mode: "solo", role: "survivor" });
         showScreen(el.dataset.target);
         break;
       case "back": goBack(); break;
+      case "start-game": startGame(); break;
       case "resume": Sound.click(); closePause(); break;
       case "exit-to-menu": Sound.click(); exitToMenu(); break;
       case "generate-code": generateCode(); break;
       case "join-game": joinGame(); break;
-      case "social": socialLogin(el.dataset.net); break;
+      case "login-facebook": loginFacebook(); break;
+      case "login-guest": loginGuest(); break;
+      case "logout": logout(); break;
+      case "save-score": saveScore(); break;
+      case "share": Sound.click(); shareResult(el.dataset.net); break;
+      case "play-again": Sound.confirm(); playAgain(); break;
+      case "result-menu": Sound.click(); exitToMenu(); break;
       case "save-settings": saveSettings(); break;
       case "reset-settings": resetSettings(); break;
       case "quit": askQuit(); break;
@@ -315,9 +532,21 @@
     }
   });
 
+  $("scores-difficulty").addEventListener("change", (e) => {
+    scoreFilter.difficulty = e.target.value;
+    loadScores();
+  });
+  for (const id of ["guest-name", "result-name"]) {
+    $(id).addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      id === "guest-name" ? loginGuest() : saveScore();
+    });
+  }
+
   // Sonido de hover en botones
   document.addEventListener("mouseover", (e) => {
-    if (e.target.closest(".btn")) Sound.hover();
+    if (e.target.closest(".btn, .pick, .tab")) Sound.hover();
   });
 
   // El audio necesita un gesto del usuario para arrancar (política del navegador)
@@ -333,5 +562,9 @@
   /* ---------------- Arranque ---------------- */
   Settings.load();
   fillSettingsForm();
-  console.log("[PENUMBRA] Interfaz lista (2º avance).");
+  renderAccount();
+  Api.refresh();
+  // precarga el SDK de Facebook si el servicio tiene App ID configurado
+  Api.info().then((i) => { if (i.facebookAppId) Api.loadFacebook(); });
+  console.log("[PENUMBRA] Interfaz lista (entrega final).");
 })();

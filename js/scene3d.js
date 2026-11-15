@@ -1,17 +1,26 @@
 /* =========================================================
-   PENUMBRA — Escenario 3D (WebGL / Three.js)
-   La Mansión Ravenwood (estudio, pasillo y gran salón)
-   construida SOLO con figuras básicas (cajas, cilindros, planos, esferas, conos,
-   toros) y texturas procedurales dibujadas en <canvas>.
+   PENUMBRA — Motor 3D (WebGL / Three.js) y partida
+   Tres escenarios totalmente distintos, cada uno en su propia
+   THREE.Scene:
+     · Mansión Ravenwood (este archivo): estudio, pasillo y gran salón.
+     · Hospital San Judas (js/levels/hospital.js).
+     · Bosque de Ceniza (js/levels/forest.js), al aire libre.
+   Construidos con figuras básicas, texturas procedurales en
+   <canvas> y modelos externos (OBJ/MTL, Collada, GLTF).
 
-   - Iluminación AMBIENTAL (tenue, fría) + FOCAL (chimenea,
-     lámpara, velas, linterna del superviviente) + luz de luna.
-   - 2º avance: personajes GLTF animados (js/characters.js),
-     control en 3ª persona (WASD + ratón), colisiones con el
-     mobiliario y multijugador en tiempo real (js/net.js).
+   - Iluminación AMBIENTAL + FOCAL en cada escenario (velas,
+     focos, fluorescentes, luna y la linterna del superviviente).
+   - Personajes animados (js/characters.js), control en 3ª
+     persona, colisiones, IA del monstruo con visión y oído.
+   - Partida: reliquias (objetivo), ítems (batería, botiquín,
+     agua bendita), vidas, salida, victoria / derrota, puntaje.
+   - Modos: Escape (campaña de 3 escenarios), Supervivencia y
+     Multijugador en tiempo real (js/net.js).
+   - Reglas y dificultad en js/rules.js (window.Rules).
 
    Expone window.Scene3D = { configure, start, stop, pause,
-   resume, end } para js/app.js.
+   resume, end } para js/app.js. Al terminar una partida lanza
+   el evento "penumbra:result" con las estadísticas.
    ========================================================= */
 
 import * as THREE from "three";
@@ -19,12 +28,13 @@ import { OBJLoader } from "./lib/addons/loaders/OBJLoader.js";
 import { MTLLoader } from "./lib/addons/loaders/MTLLoader.js";
 import { ColladaLoader } from "./lib/addons/loaders/ColladaLoader.js";
 import { createCharacter, loadModels } from "./characters.js";
+import { buildHospital } from "./levels/hospital.js";
+import { buildForest } from "./levels/forest.js";
 
 const Scene3D = (() => {
   let renderer, scene, camera, clock;
-  let raf = null, running = false, built = false;
-  let fireLight, flashSweep;
-  const flames = [];
+  let raf = null, running = false;
+  let fireLight;
   let pendulum = null, chandelier = null, dust = null;
   let spider = null;         // araña Collada que trepa en el pasillo
 
@@ -32,8 +42,14 @@ const Scene3D = (() => {
   const DOOR_HALF = 0.67;                                        // medio ancho del hueco de la puerta
   const CORR = { x1: -1.1, x2: 1.1, z1: ROOM.d / 2, z2: 11.5, h: 3.0 };   // pasillo
   const HALL = { x1: -6, x2: 6, z1: 11.5, z2: 21.5, h: 4.6 };             // gran salón
-  const WALLS = [];          // cajas XZ de los muros (colisión y línea de visión)
-  const flickers = [];       // luces que parpadean
+
+  // Datos del escenario activo. Cada escenario tiene sus propias listas;
+  // al cambiar de nivel se reasignan (ver activateLevel).
+  let LV = null;             // { id, scene, bounds, camZones, spawn, npcPath, items, exit, update… }
+  let WALLS = [];            // cajas XZ de los muros (colisión y línea de visión)
+  let OBSTACLES = [];        // cajas XZ del mobiliario (solo colisión)
+  let flames = [];           // llamas animadas
+  let flickers = [];         // luces que parpadean
 
   /* ============================================================
      TEXTURAS PROCEDURALES (canvas 2D)
@@ -633,6 +649,7 @@ const Scene3D = (() => {
   const MODELS = "assets/models/";
 
   function loadObj(dir, name) {
+    const target = scene;    // la escena que lo pidió (la carga termina después)
     return new MTLLoader().setPath(MODELS + dir).loadAsync(name + ".mtl").then((mtl) => {
       mtl.preload();
       return new OBJLoader().setMaterials(mtl).setPath(MODELS + dir).loadAsync(name + ".obj");
@@ -645,6 +662,7 @@ const Scene3D = (() => {
         });
         o.castShadow = o.receiveShadow = true;
       });
+      obj.userData.scene = target;
       return obj;
     });
   }
@@ -659,7 +677,7 @@ const Scene3D = (() => {
     pivot.scale.setScalar(size / Math.max(dim.x, dim.y, dim.z));
     pivot.position.set(x, y, z);
     pivot.rotation.y = ry;
-    scene.add(pivot);
+    (obj.userData.scene || scene).add(pivot);
     return pivot;
   }
 
@@ -709,11 +727,13 @@ const Scene3D = (() => {
   function buildSpider() {
     // araña (Collada con esqueleto): trepa por la pared oeste del pasillo
     // subiendo y bajando; las patas se animan por código rotando sus huesos
+    const target = scene;
     new ColladaLoader().loadAsync(MODELS + "arana/SP_HOME.dae").then((dae) => {
+      dae.scene.userData.scene = target;
       const model = placeModel(dae.scene, 0.35, 0, 0, 0);
       const crawler = new THREE.Group();
       crawler.add(model);
-      scene.add(crawler);
+      target.add(crawler);
       // cada pata cuelga de bone002 con 5 huesos: bone007, bone012 … bone042
       const legs = [];
       for (let k = 0; k < 8; k++) {
@@ -1255,14 +1275,35 @@ const Scene3D = (() => {
     const redLight = new THREE.PointLight(0xff2a1a, 0.5, 4, 2);
     redLight.position.set(x1 + 0.8, 2.5, tzm);
     scene.add(redLight);
+
+    // --- puerta principal (SALIDA): doble hoja en el muro norte, ala oeste ---
+    const ex = -4.6, ez = z1 + 0.17;
+    box(2.0, 0.22, 0.2, M.trim, ex, 2.75, ez);
+    for (const sx of [-0.95, 0.95]) box(0.2, 2.75, 0.2, M.trim, ex + sx, 1.37, ez);
+    for (const sx of [-0.43, 0.43]) {
+      box(0.84, 2.6, 0.08, M.woodMid, ex + sx, 1.3, ez + 0.04);
+      for (let iy = 0; iy < 3; iy++) box(0.6, 0.62, 0.03, M.woodDark, ex + sx, 0.5 + iy * 0.8, ez + 0.1);
+    }
+    // cadenas y candado: el superviviente necesita los 3 fragmentos de la llave
+    for (const r of [0.5, -0.5]) {
+      const ch = box(1.5, 0.04, 0.04, M.steel, ex, 1.25, ez + 0.14);
+      ch.rotation.z = r;
+    }
+    box(0.18, 0.2, 0.08, M.brass, ex, 1.25, ez + 0.18);
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.28),
+      new THREE.MeshBasicMaterial({ map: writingCanvas("SALIDA"), transparent: true }));
+    sign.position.set(ex, 3.1, ez + 0.12);
+    scene.add(sign);
   }
 
+
   /* ============================================================
-     COLISIONES (círculo del personaje vs. cajas XZ del mobiliario)
+     COLISIONES (círculo del personaje vs. cajas XZ)
      ============================================================ */
   const PLAYER_R = 0.3;
-  // los muros (WALLS) se registran al construirlos; aquí, el mobiliario del estudio
-  const OBSTACLES = [
+  const clamp = THREE.MathUtils.clamp;
+  // mobiliario del estudio de la mansión (los muros se registran al construirlos)
+  const MANSION_OBSTACLES = [
     { x1: 3.85, x2: 4.5, z1: -1.5, z2: 1.5 },     // chimenea
     { x1: 3.7, x2: 4.5, z1: -3.2, z2: -1.3 },     // librero
     { x1: -2.45, x2: -0.55, z1: -1.6, z2: -0.6 }, // escritorio
@@ -1275,14 +1316,15 @@ const Scene3D = (() => {
   function collide(pos, r = PLAYER_R) {
     for (const b of WALLS) pushOut(pos, b, r);
     for (const b of OBSTACLES) pushOut(pos, b, r);
-    // red de seguridad: nunca fuera de la mansión
-    pos.x = THREE.MathUtils.clamp(pos.x, HALL.x1 + r, HALL.x2 - r);
-    pos.z = THREE.MathUtils.clamp(pos.z, -ROOM.d / 2 + r, HALL.z2 - r);
+    // red de seguridad: nunca fuera del escenario
+    const B = LV.bounds;
+    pos.x = clamp(pos.x, B.x1 + r, B.x2 - r);
+    pos.z = clamp(pos.z, B.z1 + r, B.z2 - r);
   }
 
   function pushOut(pos, b, r) {
-    const cx = THREE.MathUtils.clamp(pos.x, b.x1, b.x2);
-    const cz = THREE.MathUtils.clamp(pos.z, b.z1, b.z2);
+    const cx = clamp(pos.x, b.x1, b.x2);
+    const cz = clamp(pos.z, b.z1, b.z2);
     const dx = pos.x - cx, dz = pos.z - cz;
     const d2 = dx * dx + dz * dz;
     if (d2 < r * r) {
@@ -1318,14 +1360,8 @@ const Scene3D = (() => {
   }
 
   // zonas donde puede estar la cámara (con margen a los muros) y su techo
-  const CAM_ZONES = [
-    { x1: -ROOM.w / 2 + 0.25, x2: ROOM.w / 2 - 0.25, z1: -ROOM.d / 2 + 0.25, z2: ROOM.d / 2 - 0.25, h: ROOM.h - 0.2 },
-    { x1: -DOOR_HALF + 0.12, x2: DOOR_HALF - 0.12, z1: ROOM.d / 2 - 0.5, z2: ROOM.d / 2 + 0.5, h: 2.2 },
-    { x1: CORR.x1 + 0.25, x2: CORR.x2 - 0.25, z1: CORR.z1 + 0.25, z2: CORR.z2 + 0.25, h: CORR.h - 0.2 },
-    { x1: HALL.x1 + 0.25, x2: HALL.x2 - 0.25, z1: HALL.z1 + 0.25, z2: HALL.z2 - 0.25, h: HALL.h - 0.2 },
-  ];
   function camZone(p) {
-    for (const z of CAM_ZONES) if (p.x >= z.x1 && p.x <= z.x2 && p.z >= z.z1 && p.z <= z.z2) return z;
+    for (const z of LV.camZones) if (p.x >= z.x1 && p.x <= z.x2 && p.z >= z.z1 && p.z <= z.z2) return z;
     return null;
   }
 
@@ -1341,34 +1377,252 @@ const Scene3D = (() => {
   }
 
   /* ============================================================
-     PARTIDA: personajes, entrada, cámara en 3ª persona y red
+     ESCENARIO 1: MANSIÓN RAVENWOOD
      ============================================================ */
-  const SPAWN = {
-    survivor: { pos: new THREE.Vector3(0.2, 0, 1.3), heading: Math.PI },
-    monster: { pos: new THREE.Vector3(0, 0, 9.0), heading: Math.PI },   // en el pasillo
-  };
-  // ronda del monstruo (modo un jugador): estudio → pasillo → gran salón → de regreso.
-  // Cada tramo es recto y libre de muros.
-  const NPC_PATH = [
-    [-0.5, 0.8], [2.6, -2.4], [2.6, 2.2], [0, 2.7], [0, 5.5], [0, 10.4],
-    [0, 13.0], [-1.2, 15.0], [0, 17.4], [2.4, 16.0], [0.8, 12.8], [0, 10.4],
-    [0, 5.5], [0, 2.7], [-2.8, 1.6],
-  ].map(([x, z]) => new THREE.Vector3(x, 0, z));
-  const NPC_START_WP = 13;   // desde el pasillo, entra al estudio
+  const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 
-  let config = { mode: "solo", role: "survivor" };
+  function buildMansion() {
+    buildShell();
+    buildDoor();
+    buildWindow();
+    buildFireplace();
+    buildBookshelf();
+    buildDesk();
+    buildClock();
+    buildPaintings();
+    buildChandelier();
+    buildClutter();
+    buildBallLamp();
+    buildProps();
+    buildCorridor();
+    buildSpider();
+    buildHall();
+    buildCobwebs();
+    buildDust();
+    buildLights();
+    return {
+      name: "Mansión Ravenwood",
+      background: 0x05060a, fogColor: 0x070810, fog: 0.055, exposure: 1.75,
+      surface: "wood",
+      relicStyle: "key",
+      bounds: { x1: HALL.x1, x2: HALL.x2, z1: -ROOM.d / 2, z2: HALL.z2 },
+      camZones: [
+        { x1: -ROOM.w / 2 + 0.25, x2: ROOM.w / 2 - 0.25, z1: -ROOM.d / 2 + 0.25, z2: ROOM.d / 2 - 0.25, h: ROOM.h - 0.2 },
+        { x1: -DOOR_HALF + 0.12, x2: DOOR_HALF - 0.12, z1: ROOM.d / 2 - 0.5, z2: ROOM.d / 2 + 0.5, h: 2.2 },
+        { x1: CORR.x1 + 0.25, x2: CORR.x2 - 0.25, z1: CORR.z1 + 0.25, z2: CORR.z2 + 0.25, h: CORR.h - 0.2 },
+        { x1: HALL.x1 + 0.25, x2: HALL.x2 - 0.25, z1: HALL.z1 + 0.25, z2: HALL.z2 - 0.25, h: HALL.h - 0.2 },
+      ],
+      spawn: {
+        survivor: { pos: V3(0.2, 0, 1.3), heading: Math.PI },
+        monster: { pos: V3(0, 0, 9.0), heading: Math.PI },      // en el pasillo
+      },
+      // ronda del monstruo: estudio → pasillo → gran salón → de regreso (tramos rectos sin muros)
+      npcPath: [
+        [-0.5, 0.8], [2.6, -2.4], [2.6, 2.2], [0, 2.7], [0, 5.5], [0, 10.4],
+        [0, 13.0], [-1.2, 15.0], [0, 17.4], [2.4, 16.0], [0.8, 12.8], [0, 10.4],
+        [0, 5.5], [0, 2.7], [-2.8, 1.6],
+      ].map(([x, z]) => V3(x, 0, z)),
+      npcStart: 13,
+      items: [
+        { kind: "relic", x: 3.1, z: -2.9 },                    // junto al librero
+        { kind: "relic", x: -0.6, z: 10.9 },                   // final del pasillo
+        { kind: "relic", x: -5.2, z: 20.6 },                   // rincón del salón, tras el comedor
+        { kind: "battery", x: -3.0, z: 0.8 },
+        { kind: "battery", x: -1.6, z: 13.4, skip: ["dark", "blackout"] },
+        { kind: "battery", x: 3.6, z: 20.4, skip: ["blackout"] },
+        { kind: "medkit", x: 0.6, z: 4.4, skip: ["blackout"] },
+        { kind: "holywater", x: 5.2, z: 20.6 },
+      ],
+      exit: { x: -4.6, z: 12.15, r: 1.25, label: "la puerta principal", beaconY: 3.4 },
+      update: updateMansion,
+    };
+  }
+
+  function updateMansion(dt, t) {
+    if (fireLight) fireLight.intensity = 1.7 + Math.sin(t * 12) * 0.3 + Math.random() * 0.4;
+    if (spider) updateSpider(dt, t);
+    if (pendulum) pendulum.rotation.z = Math.sin(t * 1.6) * 0.12;
+    if (chandelier) chandelier.rotation.z = Math.sin(t * 0.6) * 0.012;
+    if (dust) {
+      const arr = dust.geometry.attributes.position;
+      for (let i = 0; i < arr.count; i++) {
+        let y = arr.getY(i) + dt * 0.05;
+        if (y > ROOM.h) y = 0;
+        arr.setY(i, y);
+        arr.setX(i, arr.getX(i) + Math.sin(t * 0.3 + i) * 0.0005);
+      }
+      arr.needsUpdate = true;
+    }
+  }
+
+  /* ============================================================
+     NIVELES: cada escenario vive en su propia THREE.Scene
+     ============================================================ */
+  const LEVEL_BUILDERS = { mansion: buildMansion, hospital: buildHospital, forest: buildForest };
+  const levelCache = {};
+
+  // herramientas que reciben los escenarios de js/levels/*.js
+  const kit = {
+    THREE, M, V: V3,
+    box, cyl, sph, flameMesh, wallBox, floorPlane, decal, tiled,
+    tex, cvs, grain, bloodCanvas, writingCanvas, woodCanvas, brickCanvas, paintingCanvas,
+    loadObj, placeModel, loadFail,
+    get scene() { return scene; },
+    addObstacle: (b) => OBSTACLES.push(b),
+    addWall: (b) => WALLS.push(b),
+    addFlicker: (f) => flickers.push(f),
+  };
+
+  function activateLevel(id) {
+    if (!LEVEL_BUILDERS[id]) id = "mansion";
+    let L = levelCache[id];
+    if (!L) {
+      scene = new THREE.Scene();
+      WALLS = [];
+      OBSTACLES = id === "mansion" ? MANSION_OBSTACLES.map((o) => ({ ...o })) : [];
+      flames = [];
+      flickers = [];
+      const data = LEVEL_BUILDERS[id](kit);
+      L = levelCache[id] = { ...data, id, scene, walls: WALLS, obstacles: OBSTACLES, flames, flickers };
+      scene.background = new THREE.Color(L.background);
+      scene.fog = new THREE.FogExp2(L.fogColor, L.fog);
+      buildExitBeacon(L);
+    }
+    LV = L;
+    scene = L.scene;
+    WALLS = L.walls;
+    OBSTACLES = L.obstacles;
+    flames = L.flames;
+    flickers = L.flickers;
+    if (renderer) renderer.toneMappingExposure = L.exposure || 1.75;
+    return L;
+  }
+
+  /* ============================================================
+     ÍTEMS (mallas con brillo) Y BALIZA DE LA SALIDA
+     ============================================================ */
+  let glowTex = null;
+  function getGlowTex() {
+    if (glowTex) return glowTex;
+    const c = cvs(128), x = c.getContext("2d");
+    const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, "rgba(255,255,255,1)");
+    g.addColorStop(0.25, "rgba(255,255,255,.45)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+    glowTex = new THREE.CanvasTexture(c);
+    return glowTex;
+  }
+  const RELIC_COLOR = { key: 0xffc95a, fuse: 0xff9a3a, rune: 0x5affd8 };
+  const ITEM_COLOR = { battery: 0xc8ff6a, medkit: 0xff6a6a, holywater: 0x7fc8ff };
+
+  function itemMesh(kind, style) {
+    const g = new THREE.Group();
+    const em = (color, e = 0.6, extra = {}) => new THREE.MeshStandardMaterial({
+      color, emissive: color, emissiveIntensity: e, roughness: 0.4, metalness: 0.3, ...extra });
+    let color;
+    if (kind === "relic") {
+      color = RELIC_COLOR[style] || RELIC_COLOR.key;
+      if (style === "fuse") {
+        // fusible de cerámica con casquillos de latón y filamento encendido
+        cyl(0.04, 0.04, 0.16, em(0xeae2d0, 0.15), 0, 0, 0, g, 12).rotation.z = Math.PI / 2;
+        for (const s of [-1, 1]) cyl(0.045, 0.045, 0.04, M.brass, s * 0.1, 0, 0, g, 12).rotation.z = Math.PI / 2;
+        box(0.12, 0.012, 0.012, em(color, 1.4), 0, 0, 0.042, g);
+      } else if (style === "rune") {
+        // piedra rúnica: roca facetada con un anillo de símbolos que brilla
+        const stone = new THREE.Mesh(new THREE.IcosahedronGeometry(0.11, 0),
+          new THREE.MeshStandardMaterial({ color: 0x4b4f52, roughness: 0.9, flatShading: true }));
+        g.add(stone);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.008, 6, 24), em(color, 1.3));
+        ring.rotation.x = Math.PI / 2;
+        g.add(ring);
+      } else {
+        // fragmento de llave antigua (ojo + caña + dientes)
+        const bow = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.014, 8, 20), em(color, 0.5, { metalness: 0.9 }));
+        bow.position.x = -0.09;
+        g.add(bow);
+        box(0.14, 0.022, 0.022, em(color, 0.5, { metalness: 0.9 }), 0.02, 0, 0, g);
+        box(0.022, 0.05, 0.02, em(color, 0.5, { metalness: 0.9 }), 0.07, -0.03, 0, g);
+      }
+    } else if (kind === "battery") {
+      color = ITEM_COLOR.battery;
+      cyl(0.04, 0.04, 0.15, new THREE.MeshStandardMaterial({ color: 0x1d1d1d, roughness: 0.5 }), 0, 0, 0, g, 14);
+      cyl(0.041, 0.041, 0.06, em(0xb9e04a, 0.5), 0, 0.045, 0, g, 14);
+      cyl(0.014, 0.014, 0.02, M.steel, 0, 0.085, 0, g, 8);
+    } else if (kind === "medkit") {
+      color = ITEM_COLOR.medkit;
+      box(0.24, 0.16, 0.09, new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 0.6 }), 0, 0, 0, g);
+      box(0.11, 0.035, 0.095, em(0xd01818, 0.6), 0, 0, 0.003, g);
+      box(0.035, 0.11, 0.095, em(0xd01818, 0.6), 0, 0, 0.003, g);
+      box(0.08, 0.02, 0.02, M.metal, 0, 0.09, 0, g);
+    } else {
+      color = ITEM_COLOR.holywater;
+      const glass = em(0x9fd6ff, 0.5, { transparent: true, opacity: 0.75, metalness: 0.1, roughness: 0.1 });
+      sph(0.06, glass, 0, 0, 0, g);
+      cyl(0.022, 0.03, 0.08, glass, 0, 0.07, 0, g, 10);
+      cyl(0.026, 0.026, 0.02, M.brass, 0, 0.115, 0, g, 10);
+      box(0.012, 0.06, 0.012, M.brass, 0, 0.15, 0, g);
+      box(0.04, 0.012, 0.012, M.brass, 0, 0.16, 0, g);
+    }
+    g.traverse((o) => { if (o.isMesh) o.castShadow = false; });
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: getGlowTex(), color, transparent: true, opacity: 0.55,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    halo.scale.setScalar(kind === "relic" ? 1.0 : 0.65);
+    g.add(halo);
+    g.userData.halo = halo;
+    return g;
+  }
+
+  // baliza sobre la salida: roja cerrada, verde abierta (la luz se crea una sola vez por nivel)
+  function buildExitBeacon(L) {
+    if (!L.exit) return;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: getGlowTex(), color: 0xff3020, transparent: true, opacity: 0.8,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    s.scale.setScalar(0.9);
+    s.position.set(L.exit.x, L.exit.beaconY || 2.6, L.exit.z);
+    const light = new THREE.PointLight(0xff3020, 0.8, 4, 2);
+    light.position.copy(s.position);
+    L.scene.add(s, light);
+    L.exitBeacon = { sprite: s, light };
+  }
+
+  /* ============================================================
+     PARTIDA: estado, personajes, entrada, cámara y red
+     ============================================================ */
+  const Rules = window.Rules;
+
+  // configuración de la siguiente partida (la pone js/app.js)
+  //   mode: "solo" | "mp" · game: "escape" | "survival" | "versus"
+  //   scenario: "mansion" | "hospital" | "forest" · role · difficulty
+  let config = { mode: "solo", game: "escape", scenario: "mansion", role: "survivor", difficulty: null };
   let modelsReady = false, loadingModels = null;
   let paused = false;
+
+  // estado de la partida
+  const G = {
+    game: "escape", diffId: "normal", diff: Rules.difficulty("normal"),
+    scenario: "mansion", campaignIdx: 0,
+    hp: 3, maxHp: 3, inv: Rules.emptyInventory(),
+    relics: 0, totalRelics: 0, levelsCleared: 0,
+    time: 0, over: false, transition: 0, invuln: 0, attackCd: 0, stunned: 0,
+    items: [], exitOpen: false, boost: 1, spawnCount: 0,
+    foe: { hp: 3, maxHp: 3, relics: 0 },   // lo que el monstruo-jugador sabe del superviviente
+  };
+  const NEED = Rules.RELICS_PER_LEVEL;
 
   // jugador local
   const player = {
     char: null, role: "survivor",
     pos: new THREE.Vector3(), vel: new THREE.Vector3(),
-    heading: 0, speed: 0,
+    heading: 0, speed: 0, stepAcc: 0,
   };
   let flashlight = null, flashOn = true, battery = 1;
   // personaje remoto (otro jugador) o NPC (modo un jugador)
-  let other = null;        // { char, pos, target, heading, targetHeading, speed, flash, npc? }
+  let other = null;
 
   // cámara orbital
   const cam = { yaw: Math.PI, pitch: -0.22, dist: 2.5, shake: 0 };
@@ -1376,10 +1630,20 @@ const Scene3D = (() => {
   let locked = false;
   let netTimer = 0;
 
-  const hud = {};
   function $(id) { return document.getElementById(id); }
-
-  function setHud(id, text) { const el = $(id); if (el) el.textContent = text; }
+  const hudCache = {};
+  function setHud(id, text) {
+    if (hudCache[id] === text) return;
+    hudCache[id] = text;
+    const el = $(id);
+    if (el) el.textContent = text;
+  }
+  function setHtml(id, html) {
+    if (hudCache[id] === html) return;
+    hudCache[id] = html;
+    const el = $(id);
+    if (el) el.innerHTML = html;
+  }
   let toastTimer = null;
   function toast(text, ms = 3200) {
     const el = $("hud-toast");
@@ -1388,6 +1652,22 @@ const Scene3D = (() => {
     el.classList.add("show");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => el.classList.remove("show"), ms);
+  }
+  let bannerTimer = null;
+  function banner(title, sub = "", ms = 3400) {
+    const el = $("hud-banner");
+    if (!el) return;
+    el.innerHTML = `<h3>${title}</h3>${sub ? `<p>${sub}</p>` : ""}`;
+    el.classList.add("show");
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(() => el.classList.remove("show"), ms);
+  }
+  function hurtFlash() {
+    const el = $("hud-hurt");
+    if (!el) return;
+    el.classList.remove("hit");
+    void el.offsetWidth;            // reinicia la animación CSS
+    el.classList.add("hit");
   }
 
   function makeFlashlight(parent, withShadow) {
@@ -1410,29 +1690,77 @@ const Scene3D = (() => {
   function clearMatch() {
     if (player.char) { player.char.dispose(); player.char = null; }
     if (other) { other.char.dispose(); other = null; }
+    for (const it of G.items) it.mesh.removeFromParent();
+    G.items = [];
     flashlight = null;
+  }
+
+  /* ---------------- Inicio de partida y de nivel ---------------- */
+  function newGame() {
+    G.game = config.game || (config.mode === "mp" ? "versus" : "escape");
+    G.diffId = config.difficulty || (window.Settings ? Settings.get().difficulty : "normal");
+    if (!Rules.DIFFICULTY[G.diffId]) G.diffId = "normal";
+    G.diff = Rules.difficulty(G.diffId);
+    G.campaignIdx = 0;
+    G.scenario = G.game === "escape" ? Rules.CAMPAIGN[0] : (config.scenario || "mansion");
+    G.maxHp = G.hp = G.diff.hp;
+    G.inv = Rules.emptyInventory();
+    G.totalRelics = 0;
+    G.levelsCleared = 0;
+    G.time = 0;
+    G.over = false;
+    G.boost = 1;
+    G.foe = { hp: G.diff.hp, maxHp: G.diff.hp, relics: 0 };
+    battery = G.diffId === "blackout" ? 0.7 : 1;
+    flashOn = true;
+    startLevel();
+  }
+
+  function startLevel() {
+    activateLevel(G.scenario);
+    G.relics = 0;
+    G.exitOpen = false;
+    G.invuln = 0;
+    G.attackCd = 0;
+    G.stunned = 0;
+    G.transition = 0;
+    scene.fog.density = LV.fog * (G.diff.fog / Rules.DIFFICULTY.normal.fog);
+    setupMatch();
+    spawnItems();
+    updateExitBeacon();
+    if (window.Sound) Sound.startMusic(G.scenario);
+    const sc = Rules.SCENARIOS[G.scenario];
+    const sub = player.role === "monster"
+      ? "Atrapa al superviviente antes de que escape"
+      : G.game === "survival"
+        ? `Junta ${sc.relics} sin parar. No hay salida.`
+        : `Encuentra ${NEED} ${sc.relics} y escapa`;
+    const step = G.game === "escape" && config.mode === "solo"
+      ? `Escenario ${G.campaignIdx + 1} de ${Rules.CAMPAIGN.length} · ` : "";
+    banner(LV.name, step + sub);
   }
 
   function setupMatch() {
     clearMatch();
     player.role = config.role;
     player.char = spawnCharacter(player.role);
-    player.pos.copy(SPAWN[player.role].pos);
-    player.heading = SPAWN[player.role].heading;
+    const sp = LV.spawn[player.role];
+    player.pos.copy(sp.pos);
+    player.heading = sp.heading;
     player.vel.set(0, 0, 0);
     player.speed = 0;
     cam.yaw = player.heading + Math.PI;  // detrás del personaje
     cam.pitch = -0.22;
     cam.dist = player.role === "monster" ? 2.5 : 2.9;
+    camera.position.copy(player.pos).add(V3(Math.sin(player.heading) * -3, 2, Math.cos(player.heading) * -3));
 
-    flashOn = true; battery = 1;
     if (player.role === "survivor") {
       const q = window.Settings ? Settings.get().quality : "medium";
       flashlight = makeFlashlight(player.char.root, q !== "low");
     }
 
     if (config.mode === "solo") {
-      // monstruo controlado por la computadora (paseo + acecho)
+      // monstruo controlado por la computadora (ronda + acecho)
       addOther("monster", true);
     } else {
       // el otro jugador aparece cuando llegue su primer estado
@@ -1445,13 +1773,14 @@ const Scene3D = (() => {
   function addOther(role, npc) {
     if (other) other.char.dispose();
     const ch = spawnCharacter(role);
-    const s = SPAWN[role];
+    const s = LV.spawn[role];
     other = {
       role, npc, char: ch,
       pos: s.pos.clone(), target: s.pos.clone(),
       heading: s.heading, targetHeading: s.heading,
-      speed: 0, flash: null,
-      wp: NPC_START_WP, wait: 1.5, chasing: false, stuck: 0,
+      speed: 0, flash: null, stepAcc: 0,
+      wp: LV.npcStart || 0, wait: 2.5, chasing: false, stuck: 0,
+      lastSeen: s.pos.clone(), searchT: 0, stun: 0, recover: 0, attackCd: 0,
     };
     if (role === "survivor") other.flash = makeFlashlight(ch.root, false);
     ch.root.position.copy(other.pos);
@@ -1462,24 +1791,98 @@ const Scene3D = (() => {
     if (other) { other.char.dispose(); other = null; }
   }
 
+  function spawnItems() {
+    for (const it of G.items) it.mesh.removeFromParent();
+    G.items = Rules.itemsFor(LV.items, G.diffId)
+      .map((d, i) => makeItem(d.kind, d.x, d.z, `${G.scenario}-${i}`, d.y || 0));
+  }
+  function makeItem(kind, x, z, id, y = 0) {
+    const mesh = itemMesh(kind, LV.relicStyle);
+    mesh.position.set(x, y + 0.45, z);
+    scene.add(mesh);
+    return { id, kind, x, z, y, mesh, taken: false, respawn: 0 };
+  }
+
+  function updateExitBeacon() {
+    const b = LV.exitBeacon;
+    if (!b) return;
+    const show = G.game !== "survival";
+    b.sprite.visible = b.light.visible = show;
+    const c = G.exitOpen ? 0x40ff70 : 0xff3020;
+    b.sprite.material.color.setHex(c);
+    b.light.color.setHex(c);
+  }
+
+  /* ---------------- HUD ---------------- */
   function refreshHud() {
     const surv = player.role === "survivor";
-    setHud("objective-text", surv
-      ? "Explora la mansión. Que no te atrape."
-      : "Caza al superviviente. Sigue la luz de su linterna.");
+    const sc = Rules.SCENARIOS[G.scenario];
+    setHud("objective-text", objectiveText());
     setHud("hud-role", surv ? "Superviviente" : "Monstruo");
     const role = $("hud-role");
     if (role) role.className = surv ? "tag tag-survivor" : "tag tag-monster";
-    const d = window.Settings ? Settings.get().difficulty : "normal";
-    setHud("hud-difficulty", { normal: "Normal", dark: "Oscuro", blackout: "Apagón" }[d] || d);
+    setHud("hud-scenario", sc ? sc.label : LV.name);
+    setHud("hud-difficulty", G.diff.label);
     setHud("hud-action", surv ? "Linterna" : "Rugir");
+    setHud("hud-interact", surv ? "Recoger / usar" : "Atacar");
     const bat = $("battery");
     if (bat) bat.style.visibility = surv ? "visible" : "hidden";
+    const inv = $("inventory");
+    if (inv) inv.style.visibility = surv ? "visible" : "hidden";
+    const items = $("hud-items-hint");
+    if (items) items.hidden = !surv;
     updateNetHud();
+    updateLiveHud(true);
+  }
+
+  function objectiveText() {
+    const sc = Rules.SCENARIOS[G.scenario];
+    if (player.role === "monster") {
+      return G.foe.relics >= NEED
+        ? "¡Tiene las 3 reliquias! Vigila la salida."
+        : `Caza al superviviente (lleva ${G.foe.relics}/${NEED} ${sc.relics}).`;
+    }
+    if (G.game === "survival") return `Junta ${sc.relics}. El monstruo se vuelve más rápido con cada reliquia.`;
+    if (G.exitOpen) return `Escapa por ${LV.exit.label}.`;
+    return `Encuentra ${NEED} ${sc.relics} (${G.relics}/${NEED}).`;
+  }
+
+  function hearts(hp, max) {
+    let s = "";
+    for (let i = 0; i < max; i++) s += `<i class="${i < hp ? "on" : ""}"></i>`;
+    return s;
+  }
+
+  function updateLiveHud(force) {
+    const surv = player.role === "survivor";
+    setHud("objective-text", objectiveText());
+    setHtml("hud-hp", surv ? hearts(G.hp, G.maxHp) : hearts(G.foe.hp, G.foe.maxHp));
+    setHud("hud-hp-label", surv ? "Vida" : "Superviviente");
+    const sc = Rules.SCENARIOS[G.scenario];
+    const relics = surv ? G.relics : G.foe.relics;
+    setHud("hud-relics", G.game === "survival"
+      ? `${sc.short}: ${G.totalRelics}`
+      : `${sc.short}: ${relics}/${NEED}`);
+    setHud("hud-time", Rules.formatTime(G.time));
+    for (const k of Rules.INVENTORY) {
+      const slot = document.querySelector(`#inventory [data-item="${k}"]`);
+      if (!slot) continue;
+      const n = G.inv[k] || 0;
+      if (force || hudCache["inv-" + k] !== n) {
+        hudCache["inv-" + k] = n;
+        slot.classList.toggle("filled", n > 0);
+        const b = slot.querySelector("b");
+        if (b) b.textContent = n > 1 ? "×" + n : "";
+      }
+    }
+    const low = $("hud-hurt");
+    if (low) low.classList.toggle("low", surv && G.hp === 1 && !G.over);
+    const stun = $("hud-stun");
+    if (stun) stun.hidden = !(player.role === "monster" && G.stunned > 0);
   }
 
   function updateNetHud() {
-    if (config.mode === "solo") return setHud("hud-net", "Un jugador");
+    if (config.mode === "solo") return setHud("hud-net", G.game === "survival" ? "Supervivencia" : "Escape");
     if (!window.Net || !Net.inRoom) return setHud("hud-net", "Sin conexión");
     const peer = Net.info.peers[0];
     const who = peer ? (peer.role === "monster" ? "monstruo conectado" : "superviviente conectado")
@@ -1487,22 +1890,56 @@ const Scene3D = (() => {
     setHud("hud-net", `Sala ${Net.info.code} · ${who} · ${Net.info.ping} ms`);
   }
 
+  function updatePrompt() {
+    let html = "";
+    if (!G.over && G.transition <= 0) {
+      if (player.role === "survivor") {
+        const it = nearestItem();
+        if (it) {
+          const label = it.kind === "relic" ? Rules.SCENARIOS[G.scenario].relic : Rules.ITEMS[it.kind].label;
+          html = `<kbd>E</kbd> Recoger ${label}`;
+        } else if (nearExit()) {
+          html = G.exitOpen ? `<kbd>E</kbd> Escapar por ${LV.exit.label}`
+                            : `<kbd>E</kbd> Cerrada — faltan ${NEED - G.relics} ${Rules.SCENARIOS[G.scenario].relics}`;
+        }
+      } else if (other && !other.npc && player.pos.distanceTo(other.pos) < Rules.ATTACK_RANGE + 0.4) {
+        html = `<kbd>E</kbd> Atacar`;
+      }
+    }
+    const el = $("interact-prompt");
+    if (!el) return;
+    if (hudCache.prompt !== html) {
+      hudCache.prompt = html;
+      el.innerHTML = html;
+      el.style.display = html ? "" : "none";
+    }
+  }
+
   /* ---------------- Entrada ---------------- */
+  function canControl() {
+    return !paused && !G.over && G.transition <= 0;
+  }
   function onKeyDown(e) {
     if (!running || paused) return;
     keys.add(e.code);
-    if (e.code === "KeyF" && !e.repeat) doAction();
+    if (e.repeat || !canControl()) return;
+    if (e.code === "KeyF") doAction();
+    else if (e.code === "KeyE") interact();
+    else if (e.code === "Digit1" || e.code === "Numpad1") useItem("battery");
+    else if (e.code === "Digit2" || e.code === "Numpad2") useItem("medkit");
+    else if (e.code === "Digit3" || e.code === "Numpad3") useItem("holywater");
   }
   function onKeyUp(e) { keys.delete(e.code); }
   function onMouseMove(e) {
     if (!locked || paused) return;
     const sens = (window.Settings ? Settings.get().sensitivity : 8) * 0.00028;
     cam.yaw -= e.movementX * sens;
-    cam.pitch = THREE.MathUtils.clamp(cam.pitch - e.movementY * sens, -0.9, 0.35);
+    cam.pitch = clamp(cam.pitch - e.movementY * sens, -0.9, 0.35);
   }
   function onCanvasClick() {
-    if (!running || paused || locked) return;
-    requestLock();
+    if (!running || paused || G.over) return;
+    if (!locked) return requestLock();
+    if (player.role === "monster" && canControl()) monsterAttack();
   }
   function requestLock() {
     const c = renderer && renderer.domElement;
@@ -1515,14 +1952,14 @@ const Scene3D = (() => {
   function onLockChange() {
     locked = document.pointerLockElement === renderer.domElement;
     const hint = $("hud-lock");
-    if (hint) hint.hidden = locked || !running || paused;
-    // salir del puntero con ESC = pausa
-    if (!locked && running && !paused) window.dispatchEvent(new CustomEvent("penumbra:unlock"));
+    if (hint) hint.hidden = locked || !running || paused || G.over;
+    // salir del puntero con ESC = pausa (pero no al terminar la partida)
+    if (!locked && running && !paused && !G.over) window.dispatchEvent(new CustomEvent("penumbra:unlock"));
   }
 
   function doAction() {
     if (player.role === "survivor") {
-      if (battery <= 0.02 && !flashOn) return;
+      if (battery <= 0.02 && !flashOn) { toast("Sin batería. Usa una batería (1)."); return; }
       flashOn = !flashOn;
       Sound.flashlight();
       if (window.Net) Net.sendEvent("flash", flashOn);
@@ -1533,20 +1970,281 @@ const Scene3D = (() => {
     }
   }
 
+  /* ---------------- Ítems, salida y daño ---------------- */
+  function nearestItem() {
+    let best = null, bd = 1.25;
+    for (const it of G.items) {
+      if (it.taken) continue;
+      const d = Math.hypot(player.pos.x - it.x, player.pos.z - it.z);
+      if (d < bd) { bd = d; best = it; }
+    }
+    return best;
+  }
+  function nearExit() {
+    if (G.game === "survival" || !LV.exit) return false;
+    return Math.hypot(player.pos.x - LV.exit.x, player.pos.z - LV.exit.z) < LV.exit.r;
+  }
+
+  function interact() {
+    if (player.role === "monster") return monsterAttack();
+    const it = nearestItem();
+    if (it) return pickItem(it);
+    if (nearExit()) {
+      if (G.exitOpen) return levelComplete();
+      Sound.denied();
+      toast(`Está cerrada. Faltan ${NEED - G.relics} ${Rules.SCENARIOS[G.scenario].relics}.`);
+    }
+  }
+
+  function pickItem(it) {
+    const sc = Rules.SCENARIOS[G.scenario];
+    if (it.kind === "relic") {
+      G.relics++;
+      G.totalRelics++;
+      Sound.pickup(true);
+      if (G.game === "survival") {
+        G.boost += 0.06;
+        toast(`${sc.relic} (${G.totalRelics}). El monstruo se enfurece…`);
+        spawnSurvivalRelic();
+      } else if (G.relics >= NEED) {
+        G.exitOpen = true;
+        updateExitBeacon();
+        toast(`¡Tienes los ${NEED}! Escapa por ${LV.exit.label}.`, 4500);
+      } else {
+        toast(`${sc.relic} ${G.relics}/${NEED}`);
+      }
+    } else {
+      if (!Rules.addItem(G.inv, it.kind)) { Sound.denied(); toast(`No puedes cargar más (${Rules.ITEMS[it.kind].label}).`); return; }
+      Sound.pickup(false);
+      toast(`${Rules.ITEMS[it.kind].label} — úsala con la tecla ${Rules.ITEMS[it.kind].key}`);
+    }
+    it.taken = true;
+    it.mesh.visible = false;
+    if (G.game === "survival" && it.kind !== "relic") it.respawn = 60;
+    if (config.mode === "mp" && window.Net) Net.sendEvent("pick", { id: it.id, relics: G.relics });
+    updateLiveHud();
+  }
+
+  // Supervivencia: cada reliquia recogida aparece otra en un punto lejano
+  function spawnSurvivalRelic() {
+    const spots = LV.items.concat(LV.spots || []);
+    const free = spots.filter((s) => Math.hypot(s.x - player.pos.x, s.z - player.pos.z) > 6 &&
+      !G.items.some((it) => !it.taken && Math.hypot(it.x - s.x, it.z - s.z) < 0.5));
+    const pool = free.length ? free : spots;
+    const s = pool[Math.floor(Math.random() * pool.length)];
+    G.items.push(makeItem("relic", s.x, s.z, `${G.scenario}-r${++G.spawnCount}`, s.y || 0));
+  }
+
+  function useItem(kind) {
+    if (player.role !== "survivor") return;
+    if (!G.inv[kind]) { Sound.denied(); toast(`No tienes ${Rules.ITEMS[kind].label.toLowerCase()}.`); return; }
+    if (kind === "battery") {
+      if (battery > 0.97) { toast("La linterna ya está cargada."); return; }
+      battery = Math.min(1, battery + Rules.BATTERY_CHARGE);
+      flashOn = true;
+      toast("Linterna recargada.");
+    } else if (kind === "medkit") {
+      if (G.hp >= G.maxHp) { toast("Tienes la vida completa."); return; }
+      G.hp++;
+      toast("Te curaste las heridas.");
+      sendHp();
+    } else if (kind === "holywater") {
+      cam.shake = 0.3;
+      holyBurst(player.pos);
+      if (config.mode === "solo") {
+        if (other && other.pos.distanceTo(player.pos) < Rules.STUN_RADIUS) {
+          other.stun = Rules.STUN_TIME;
+          other.chasing = false;
+          toast("¡El agua bendita paraliza al monstruo!");
+        } else toast("El agua bendita se evapora… el monstruo no estaba cerca.");
+      } else if (window.Net) {
+        Net.sendEvent("holy", { x: player.pos.x, z: player.pos.z });
+        toast("Lanzaste agua bendita.");
+      }
+    }
+    G.inv[kind]--;
+    Sound.useItem(kind);
+    updateLiveHud();
+  }
+
+  // destello azul del agua bendita (partículas que se expanden)
+  const bursts = [];
+  function holyBurst(at) {
+    const N = 60, pos = new Float32Array(N * 3), vel = [];
+    for (let i = 0; i < N; i++) {
+      pos.set([at.x, 1.0, at.z], i * 3);
+      const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 3;
+      vel.push([Math.cos(a) * s, (Math.random() - 0.3) * 2, Math.sin(a) * s]);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const p = new THREE.Points(g, new THREE.PointsMaterial({
+      color: 0x8fd0ff, size: 0.16, map: getGlowTex(), transparent: true, opacity: 1,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    scene.add(p);
+    bursts.push({ p, vel, life: 1 });
+  }
+  function updateBursts(dt) {
+    for (let i = bursts.length - 1; i >= 0; i--) {
+      const b = bursts[i];
+      b.life -= dt;
+      const arr = b.p.geometry.attributes.position;
+      for (let k = 0; k < arr.count; k++) {
+        arr.setXYZ(k, arr.getX(k) + b.vel[k][0] * dt, arr.getY(k) + b.vel[k][1] * dt, arr.getZ(k) + b.vel[k][2] * dt);
+      }
+      arr.needsUpdate = true;
+      b.p.material.opacity = Math.max(0, b.life);
+      if (b.life <= 0) { b.p.removeFromParent(); b.p.geometry.dispose(); bursts.splice(i, 1); }
+    }
+  }
+
+  function sendHp() {
+    if (config.mode === "mp" && window.Net) Net.sendEvent("hp", { hp: G.hp, max: G.maxHp });
+  }
+
+  // golpe del monstruo al superviviente local
+  function hurtPlayer(from) {
+    if (G.invuln > 0 || G.over || player.role !== "survivor") return false;
+    G.hp--;
+    G.invuln = Rules.INVULNERABLE;
+    Sound.hurt();
+    hurtFlash();
+    cam.shake = 0.8;
+    const push = player.pos.clone().sub(from).setY(0);
+    if (push.lengthSq() > 1e-4) player.vel.addScaledVector(push.normalize(), 5);
+    sendHp();
+    if (G.hp <= 0) endMatch("caught");
+    else toast(G.hp === 1 ? "¡Te queda una vida! Usa un botiquín (2)." : "¡El monstruo te alcanzó!");
+    updateLiveHud();
+    return true;
+  }
+
+  // el monstruo-jugador ataca (multijugador)
+  function monsterAttack() {
+    if (player.role !== "monster" || G.attackCd > 0 || G.stunned > 0) return;
+    G.attackCd = Rules.ATTACK_COOLDOWN;
+    Sound.swipe();
+    cam.shake = 0.35;
+    // embestida corta hacia donde mira
+    player.vel.add(V3(Math.sin(player.heading) * 4, 0, Math.cos(player.heading) * 4));
+    if (other && other.pos.distanceTo(player.pos) < Rules.ATTACK_RANGE + 0.4 && !wallBetween(player.pos, other.pos)) {
+      Net.sendEvent("hit", { x: player.pos.x, z: player.pos.z });
+    }
+  }
+
+  /* ---------------- Fin de nivel y de partida ---------------- */
+  function levelComplete() {
+    G.levelsCleared++;
+    Sound.unlock();
+    const last = G.game !== "escape" || config.mode === "mp" || G.campaignIdx >= Rules.CAMPAIGN.length - 1;
+    if (last) return endMatch("escaped");
+    // campaña: pasar al siguiente escenario (se conservan vida, inventario y batería)
+    const next = Rules.SCENARIOS[Rules.CAMPAIGN[G.campaignIdx + 1]];
+    banner(`Escapaste de ${LV.name}`, `Siguiente: ${next.label}`, 3000);
+    G.transition = 3;
+    keys.clear();
+  }
+
+  function nextLevel() {
+    G.campaignIdx++;
+    G.scenario = Rules.CAMPAIGN[G.campaignIdx];
+    startLevel();
+  }
+
+  function endMatch(result, remote = false) {
+    if (G.over) return;
+    G.over = true;
+    keys.clear();
+    const surv = player.role === "survivor";
+    const campaign = G.game === "escape" && config.mode === "solo";
+    const stats = {
+      result,                             // escaped | caught | won | lost | abandon
+      role: player.role,
+      mode: G.game,
+      difficulty: G.diffId,
+      scenario: campaign ? "campaign" : G.scenario,
+      scenarioLabel: campaign ? "Campaña (3 escenarios)" : Rules.SCENARIOS[G.scenario].label,
+      reached: Rules.SCENARIOS[G.scenario].label,
+      seconds: Math.round(G.time),
+      relics: surv ? G.totalRelics : G.foe.relics,
+      levels: G.levelsCleared,
+      levelsPlayed: campaign ? Rules.CAMPAIGN.length : 1,
+      hp: Math.max(0, G.hp),
+      escaped: result === "escaped",
+      won: result === "escaped" || result === "won",
+    };
+    stats.points = result === "abandon" ? 0 : Rules.score(stats);
+    if (config.mode === "mp" && surv && !remote && window.Net) Net.sendEvent("end", { result });
+    if (window.Sound) {
+      Sound.stopMusic();
+      Sound.setTension(0);
+      stats.won ? Sound.win() : (result === "abandon" ? Sound.denied() : Sound.lose());
+    }
+    if (result === "caught" && surv) { cam.shake = 1.2; hurtFlash(); }
+    updateLiveHud();
+    updatePrompt();
+    setTimeout(() => {
+      if (document.pointerLockElement) document.exitPointerLock();
+      window.dispatchEvent(new CustomEvent("penumbra:result", { detail: stats }));
+    }, result === "caught" ? 1700 : 900);
+  }
+
+  /* ---------------- Red ---------------- */
   function onNetEvent(msg) {
-    if (!other) return;
-    if (msg.e === "flash" && other.flash) other.flash.visible = !!msg.d;
-    if (msg.e === "roar") {
-      const d = other.pos.distanceTo(player.pos);
-      Sound.roar(THREE.MathUtils.clamp(1.4 - d / 8, 0.3, 1));
-      cam.shake = Math.max(cam.shake, THREE.MathUtils.clamp(0.7 - d / 10, 0.15, 0.7));
-      toast(player.role === "survivor" ? "Algo ruge muy cerca…" : "El monstruo ruge");
+    const d = msg.d || {};
+    switch (msg.e) {
+      case "flash":
+        if (other && other.flash) other.flash.visible = !!msg.d;
+        break;
+      case "roar": {
+        if (!other) break;
+        const dist = other.pos.distanceTo(player.pos);
+        Sound.roar(clamp(1.4 - dist / 8, 0.3, 1));
+        cam.shake = Math.max(cam.shake, clamp(0.7 - dist / 10, 0.15, 0.7));
+        toast(player.role === "survivor" ? "Algo ruge muy cerca…" : "El monstruo ruge");
+        break;
+      }
+      case "pick": {            // el superviviente recogió algo
+        const it = G.items.find((i) => i.id === d.id);
+        if (it) { it.taken = true; it.mesh.visible = false; }
+        if (typeof d.relics === "number") {
+          G.foe.relics = d.relics;
+          if (d.relics >= NEED && !G.exitOpen) {
+            G.exitOpen = true;
+            updateExitBeacon();
+            toast("¡El superviviente tiene las reliquias! Va hacia la salida.", 4500);
+            Sound.denied();
+          }
+        }
+        break;
+      }
+      case "hp":
+        G.foe.hp = d.hp; G.foe.maxHp = d.max;
+        if (player.role === "monster") toast(`¡Golpe! Al superviviente le quedan ${d.hp} vidas.`);
+        break;
+      case "hit":
+        if (player.role === "survivor") hurtPlayer(V3(d.x || 0, 0, d.z || 0));
+        break;
+      case "holy":
+        if (player.role === "monster") {
+          holyBurst(V3(d.x, 0, d.z));
+          if (Math.hypot(player.pos.x - d.x, player.pos.z - d.z) < Rules.STUN_RADIUS) {
+            G.stunned = Rules.STUN_TIME;
+            Sound.stun();
+            toast("¡Agua bendita! Quedaste paralizado.", 3000);
+          }
+        }
+        break;
+      case "end":
+        if (player.role === "monster") endMatch(d.result === "escaped" ? "lost" : "won", true);
+        break;
     }
   }
   function onNetState(msg) {
     if (config.mode !== "mp") return;
     // si los modelos aún cargan, setupMatch() agregará al rival al terminar
-    if (!modelsReady) return;
+    if (!modelsReady || !LV || !player.char) return;
     if (!other) {
       const peer = Net.info.peers.find((p) => p.id === msg.id);
       addOther(peer ? peer.role : (player.role === "survivor" ? "monster" : "survivor"), false);
@@ -1559,8 +2257,8 @@ const Scene3D = (() => {
   }
   function onPeerJoin(msg) {
     if (config.mode !== "mp") return;
-    toast(msg.role === "monster" ? "El monstruo entró a la mansión." : "Un superviviente entró a la mansión.");
-    if (modelsReady) addOther(msg.role, false);
+    toast(msg.role === "monster" ? "El monstruo entró al escenario." : "Un superviviente entró al escenario.");
+    if (modelsReady && player.char) addOther(msg.role, false);
     updateNetHud();
   }
   function onPeerLeave(msg) {
@@ -1568,6 +2266,7 @@ const Scene3D = (() => {
     toast(msg.role === "monster" ? "El monstruo abandonó la partida." : "El superviviente abandonó la partida.", 4500);
     removeOther();
     updateNetHud();
+    if (running && player.char && !G.over) endMatch("abandon");
   }
   function onNetClose(info) {
     if (config.mode !== "mp" || !info.wasInRoom) return;
@@ -1600,11 +2299,12 @@ const Scene3D = (() => {
   function updatePlayer(dt) {
     if (!player.char) return;
     const def = player.char.def;
+    const monster = player.role === "monster";
 
     _fwd.set(-Math.sin(cam.yaw), 0, -Math.cos(cam.yaw));
     _right.set(Math.cos(cam.yaw), 0, -Math.sin(cam.yaw));
     _wish.set(0, 0, 0);
-    if (!paused) {
+    if (canControl() && !(monster && G.stunned > 0)) {
       if (keys.has("KeyW") || keys.has("ArrowUp")) _wish.add(_fwd);
       if (keys.has("KeyS") || keys.has("ArrowDown")) _wish.sub(_fwd);
       if (keys.has("KeyD") || keys.has("ArrowRight")) _wish.add(_right);
@@ -1612,7 +2312,8 @@ const Scene3D = (() => {
     }
     const moving = _wish.lengthSq() > 0;
     const run = keys.has("ShiftLeft") || keys.has("ShiftRight");
-    const maxSpeed = moving ? (run ? def.runSpeed : def.walkSpeed) : 0;
+    const mul = monster ? G.diff.monsterPlayerSpeed : 1;
+    const maxSpeed = moving ? (run ? def.runSpeed : def.walkSpeed) * mul : 0;
     if (moving) _wish.normalize().multiplyScalar(maxSpeed);
 
     // aceleración suave
@@ -1634,10 +2335,19 @@ const Scene3D = (() => {
     player.char.setMotion(player.speed);
     player.char.update(dt);
 
+    // pasos
+    player.stepAcc += player.speed * dt;
+    const stride = player.speed > 3 ? 0.9 : 0.62;
+    if (player.speed > 0.4 && player.stepAcc > stride) {
+      player.stepAcc = 0;
+      Sound.step(monster ? "heavy" : LV.surface, player.speed > 3 ? 0.9 : 0.55);
+    }
+
     // linterna y batería
     if (flashlight) {
-      battery = THREE.MathUtils.clamp(battery + (flashOn ? -dt / 150 : dt / 60), 0, 1);
-      if (battery <= 0 && flashOn) { flashOn = false; toast("La linterna se quedó sin batería."); }
+      const d = G.diff;
+      battery = clamp(battery + (flashOn ? -d.drain : d.recharge) * dt, 0, 1);
+      if (battery <= 0 && flashOn) { flashOn = false; toast("La linterna se quedó sin batería. Usa una batería (1)."); }
       const flicker = battery < 0.15 ? (Math.random() < 0.1 ? 0.2 : 1) : 1;
       flashlight.visible = flashOn;
       flashlight.intensity = 9 * flicker * (0.5 + battery * 0.5);
@@ -1658,61 +2368,147 @@ const Scene3D = (() => {
     other.char.root.rotation.y = other.heading;
     other.char.setMotion(other.speed);
     other.char.update(dt);
+
+    // pasos del otro, más fuertes cuanto más cerca
+    other.stepAcc += other.speed * dt;
+    if (other.speed > 0.4 && other.stepAcc > (other.speed > 3 ? 0.9 : 0.7)) {
+      other.stepAcc = 0;
+      const v = clamp(1 - other.pos.distanceTo(player.pos) / 12, 0, 1);
+      if (v > 0.05) Sound.step(other.role === "monster" ? "heavy" : LV.surface, v * 0.8);
+    }
   }
 
   // punto de ronda más cercano que se vea sin muros de por medio
   function nearestVisibleWp(pos) {
     let best = other.wp, bestD = Infinity;
-    NPC_PATH.forEach((p, i) => {
+    LV.npcPath.forEach((p, i) => {
       const d = p.distanceTo(pos);
       if (d < bestD && !wallBetween(pos, p)) { best = i; bestD = d; }
     });
     return best;
   }
 
-  // IA sencilla del monstruo en modo un jugador: ronda por la mansión y,
-  // si ve al superviviente cerca (sin muros de por medio), se le acerca.
+  // IA del monstruo (modo un jugador): ronda por el escenario; si VE al
+  // superviviente (distancia + sin muros) u OYE sus pasos (según la
+  // dificultad) lo persigue, lo golpea, y al perderlo busca donde lo vio.
   function updateNpc(dt) {
-    const toPlayer = player.pos.clone().sub(other.pos);
+    const o = other, d = G.diff;
+    o.attackCd = Math.max(0, o.attackCd - dt);
+    const toPlayer = player.pos.clone().sub(o.pos);
     const dist = toPlayer.length();
-    const sees = dist < 4.5 && !wallBetween(other.pos, player.pos);
     let goal = null, speed = 0;
 
-    if (sees) {
-      other.chasing = true;
-      if (dist > 1.1) { goal = player.pos; speed = 1.5; }
-      other.targetHeading = Math.atan2(toPlayer.x, toPlayer.z);
+    if (o.stun > 0 || o.recover > 0 || G.over || G.transition > 0) {
+      o.stun = Math.max(0, o.stun - dt);
+      o.recover = Math.max(0, o.recover - dt);
     } else {
-      if (other.chasing) { other.chasing = false; other.wp = nearestVisibleWp(other.pos); other.wait = 1.2; }
-      if (other.wait > 0) {
-        other.wait -= dt;
+      // la linterna encendida lo delata; a oscuras cuesta más verte
+      const lit = flashOn && battery > 0;
+      const visionR = d.vision * (lit ? 1.2 : 0.75);
+      const sees = dist < visionR && !wallBetween(o.pos, player.pos);
+      const hears = (player.speed > 3 && dist < d.hearRun) || (player.speed > 0.5 && dist < d.hearWalk);
+      if (sees || hears) {
+        if (!o.chasing) Sound.growl(clamp(1.2 - dist / 8, 0.3, 1));
+        o.chasing = true;
+        o.lastSeen.copy(player.pos);
+        o.searchT = 5;
+      }
+
+      if (sees) {
+        if (dist > 0.85) { goal = player.pos; speed = d.monsterChase * G.boost; }
+        o.targetHeading = Math.atan2(toPlayer.x, toPlayer.z);
+        if (dist < Rules.ATTACK_RANGE && o.attackCd <= 0) {
+          o.attackCd = Rules.ATTACK_COOLDOWN;
+          o.recover = 1.3;
+          Sound.swipe();
+          hurtPlayer(o.pos);
+        }
+      } else if (o.chasing) {
+        o.searchT -= dt;
+        goal = o.lastSeen;
+        speed = d.monsterChase * 0.85 * G.boost;
+        if (o.pos.distanceTo(o.lastSeen) < 0.5 || o.searchT <= 0) {
+          o.chasing = false;
+          o.wp = nearestVisibleWp(o.pos);
+          o.wait = 1.2;
+          goal = null; speed = 0;
+        }
+      } else if (o.wait > 0) {
+        o.wait -= dt;
       } else {
-        goal = NPC_PATH[other.wp];
-        speed = 1.25;
-        if (other.pos.distanceTo(goal) < 0.35) {
-          other.wp = (other.wp + 1) % NPC_PATH.length;
-          other.wait = Math.random() < 0.4 ? 1 + Math.random() * 2 : 0;
+        goal = LV.npcPath[o.wp];
+        speed = d.monsterWalk * G.boost;
+        if (o.pos.distanceTo(goal) < 0.35) {
+          o.wp = (o.wp + 1) % LV.npcPath.length;
+          o.wait = Math.random() < 0.4 ? 1 + Math.random() * 2 : 0;
           goal = null; speed = 0;
         }
       }
     }
-    const before = other.pos.clone();
+    const before = o.pos.clone();
     if (goal) {
-      const dir = goal.clone().sub(other.pos).setY(0);
+      const dir = goal.clone().sub(o.pos).setY(0);
       if (dir.lengthSq() > 1e-4) {
         dir.normalize();
-        other.pos.addScaledVector(dir, speed * dt);
-        other.targetHeading = Math.atan2(dir.x, dir.z);
+        o.pos.addScaledVector(dir, speed * dt);
+        o.targetHeading = Math.atan2(dir.x, dir.z);
       }
     }
-    collide(other.pos);
+    collide(o.pos);
     // si se atora contra un mueble, busca otro punto de ronda
-    if (goal && !sees) {
-      other.stuck = before.distanceTo(other.pos) < speed * dt * 0.3 ? other.stuck + dt : 0;
-      if (other.stuck > 1.5) { other.stuck = 0; other.wp = (nearestVisibleWp(other.pos) + 1) % NPC_PATH.length; }
+    if (goal && speed > 0) {
+      o.stuck = before.distanceTo(o.pos) < speed * dt * 0.3 ? o.stuck + dt : 0;
+      if (o.stuck > 1.2) {
+        o.stuck = 0;
+        o.chasing = false;
+        o.wp = (nearestVisibleWp(o.pos) + 1) % LV.npcPath.length;
+      }
     }
-    other.speed = THREE.MathUtils.lerp(other.speed, speed, 1 - Math.exp(-8 * dt));
-    other.heading = angleLerp(other.heading, other.targetHeading, 1 - Math.exp(-6 * dt));
+    o.speed = THREE.MathUtils.lerp(o.speed, speed, 1 - Math.exp(-8 * dt));
+    o.heading = angleLerp(o.heading, o.targetHeading, 1 - Math.exp(-6 * dt));
+  }
+
+  function updateGame(dt, t) {
+    if (G.transition > 0) {
+      G.transition -= dt;
+      if (G.transition <= 0) nextLevel();
+      return;
+    }
+    if (G.over) return;
+    G.time += dt;
+    G.invuln = Math.max(0, G.invuln - dt);
+    G.attackCd = Math.max(0, G.attackCd - dt);
+    if (G.stunned > 0) G.stunned = Math.max(0, G.stunned - dt);
+
+    // Supervivencia: los ítems de ayuda vuelven a aparecer
+    for (const it of G.items) {
+      if (it.taken && it.respawn > 0) {
+        it.respawn -= dt;
+        if (it.respawn <= 0) { it.taken = false; it.mesh.visible = true; }
+      }
+    }
+    // tensión (latido y música) según la distancia al rival
+    if (other) {
+      const dist = other.pos.distanceTo(player.pos);
+      Sound.setTension(clamp(1 - (dist - 1.5) / 8, 0, 1));
+    }
+    updateLiveHud();
+    updatePrompt();
+  }
+
+  function updateItems(dt, t) {
+    for (const it of G.items) {
+      if (it.taken) continue;
+      it.mesh.position.y = it.y + 0.45 + Math.sin(t * 2 + it.x) * 0.06;
+      it.mesh.rotation.y += dt * 1.3;
+      it.mesh.userData.halo.material.opacity = 0.4 + Math.sin(t * 3 + it.z) * 0.15;
+    }
+    const b = LV.exitBeacon;
+    if (b && b.sprite.visible) {
+      const k = G.exitOpen ? 1 : 0.6 + Math.sin(t * 4) * 0.3;
+      b.sprite.material.opacity = 0.8 * k;
+      b.light.intensity = 0.9 * k;
+    }
   }
 
   function updateCamera(dt) {
@@ -1760,44 +2556,33 @@ const Scene3D = (() => {
     const dt = Math.min(clock.getDelta(), 0.05);
     const t = clock.elapsedTime;
 
-    if (modelsReady && player.char) {
-      updatePlayer(dt);
-      updateOther(dt);
-      updateCamera(dt);
-      sendNet(dt);
-    }
-
-    if (fireLight)
-      fireLight.intensity = 1.7 + Math.sin(t * 12) * 0.3 + Math.random() * 0.4;
-
-    for (const f of flames) {
-      f.scale.y = 0.75 + Math.sin(t * 15 + f.position.x * 3) * 0.25;
-      f.material.color.setHSL(0.09, 1, 0.55 + Math.random() * 0.12);
-      f.rotation.z = Math.sin(t * 8 + f.position.z) * 0.15;
-    }
-    for (const f of flickers) {
-      // la araña tiembla suave; el foco del pasillo falla de vez en cuando
-      const k = f.soft ? 0.9 + Math.sin(t * 7) * 0.05 + Math.random() * 0.08
-                       : (Math.sin(t * 0.7) > 0.6 && Math.random() < 0.35 ? 0.05 : 1);
-      f.light.intensity = f.base * k;
-      if (f.bulb) f.bulb.visible = k > 0.5;
-    }
-    if (spider) updateSpider(dt, t);
-    if (pendulum) pendulum.rotation.z = Math.sin(t * 1.6) * 0.12;
-    if (chandelier) chandelier.rotation.z = Math.sin(t * 0.6) * 0.012;
-
-    if (dust) {
-      const arr = dust.geometry.attributes.position;
-      for (let i = 0; i < arr.count; i++) {
-        let y = arr.getY(i) + dt * 0.05;
-        if (y > ROOM.h) y = 0;
-        arr.setY(i, y);
-        arr.setX(i, arr.getX(i) + Math.sin(t * 0.3 + i) * 0.0005);
+    if (LV) {
+      if (modelsReady && player.char) {
+        updateGame(dt, t);
+        if (LV && player.char) {
+          updatePlayer(dt);
+          updateOther(dt);
+          updateCamera(dt);
+          sendNet(dt);
+        }
       }
-      arr.needsUpdate = true;
+      for (const f of flames) {
+        f.scale.y = 0.75 + Math.sin(t * 15 + f.position.x * 3) * 0.25;
+        f.material.color.setHSL(0.09, 1, 0.55 + Math.random() * 0.12);
+        f.rotation.z = Math.sin(t * 8 + f.position.z) * 0.15;
+      }
+      for (const f of flickers) {
+        // "soft" tiembla suave; los demás fallan de vez en cuando
+        const k = f.soft ? 0.9 + Math.sin(t * 7) * 0.05 + Math.random() * 0.08
+                         : (Math.sin(t * 0.7 + (f.phase || 0)) > 0.6 && Math.random() < 0.35 ? 0.05 : 1);
+        f.light.intensity = f.base * k;
+        if (f.bulb) f.bulb.visible = k > 0.5;
+      }
+      updateItems(dt, t);
+      updateBursts(dt);
+      if (LV.update) LV.update(dt, t, player.pos);
+      renderer.render(scene, camera);
     }
-
-    renderer.render(scene, camera);
     raf = requestAnimationFrame(frame);
   }
 
@@ -1811,35 +2596,6 @@ const Scene3D = (() => {
     if (q === "low") { renderer.shadowMap.enabled = false; renderer.setPixelRatio(1); }
     else if (q === "high") { renderer.shadowMap.enabled = true; renderer.setPixelRatio(Math.min(dpr, 2)); }
     else { renderer.shadowMap.enabled = true; renderer.setPixelRatio(Math.min(dpr, 1.5)); }
-  }
-
-  function build() {
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x05060a);
-    scene.fog = new THREE.FogExp2(0x070810, 0.055);
-    camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.05, 60);
-    camera.position.set(0, 1.6, 3);
-
-    buildMaterials();
-    buildShell();
-    buildDoor();
-    buildWindow();
-    buildFireplace();
-    buildBookshelf();
-    buildDesk();
-    buildClock();
-    buildPaintings();
-    buildChandelier();
-    buildClutter();
-    buildBallLamp();
-    buildProps();
-    buildCorridor();
-    buildSpider();
-    buildHall();
-    buildCobwebs();
-    buildDust();
-    buildLights();
-    built = true;
   }
 
   function resize() {
@@ -1856,7 +2612,7 @@ const Scene3D = (() => {
     if (modelsReady) return Promise.resolve();
     if (loadingModels) return loadingModels;
     const el = $("hud-loading");
-    if (el) { el.hidden = false; el.textContent = "Cargando modelos 0/2…"; }
+    if (el) { el.hidden = false; el.textContent = "Cargando modelos 0/1…"; }
     loadingModels = loadModels((done, total) => {
       if (el) el.textContent = `Cargando modelos ${done}/${total}…`;
     }).then(() => {
@@ -1872,7 +2628,7 @@ const Scene3D = (() => {
   }
 
   let matchPending = true;
-  // modo de la siguiente partida: { mode: "solo" | "mp", role: "survivor" | "monster" }
+  // configuración de la siguiente partida (ver `config` arriba)
   function configure(opts) {
     config = { ...config, ...opts };
     matchPending = true;
@@ -1887,8 +2643,10 @@ const Scene3D = (() => {
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.75;
+      camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.05, 80);
+      camera.position.set(0, 1.6, 3);
       clock = new THREE.Clock();
-      build();
+      buildMaterials();
       applyQuality();
       canvas.addEventListener("click", onCanvasClick);
       document.addEventListener("pointerlockchange", onLockChange);
@@ -1901,13 +2659,24 @@ const Scene3D = (() => {
     paused = false;
     resize();
     window.addEventListener("resize", resize);
-    const ip = $("interact-prompt");
-    if (ip) ip.style.display = "none";
     const hint = $("hud-lock");
     if (hint) hint.hidden = locked;
 
+    if (matchPending) {
+      // mientras cargan los modelos ya se ve el escenario de destino
+      const first = (config.game || "escape") === "escape" && config.mode === "solo"
+        ? Rules.CAMPAIGN[0] : (config.scenario || "mansion");
+      activateLevel(first);
+      const sp = LV.spawn.survivor;
+      camera.position.copy(sp.pos).add(V3(0, 1.8, 2.5));
+      camera.lookAt(sp.pos.x, 1.2, sp.pos.z);
+      const ip = $("interact-prompt");
+      if (ip) ip.style.display = "none";
+      hudCache.prompt = "";
+    }
+
     ensureModels().then(() => {
-      if (matchPending) { setupMatch(); matchPending = false; }
+      if (matchPending) { matchPending = false; newGame(); }
       else refreshHud();
     }).catch(() => {});
 
@@ -1924,6 +2693,7 @@ const Scene3D = (() => {
     if (raf) cancelAnimationFrame(raf);
     window.removeEventListener("resize", resize);
     if (document.pointerLockElement) document.exitPointerLock();
+    if (window.Sound) Sound.setTension(0);
   }
 
   // Pausa: en un jugador se congela todo; en multijugador el mundo sigue
@@ -1946,14 +2716,33 @@ const Scene3D = (() => {
   function end() {
     stop();
     clearMatch();
+    G.over = true;
+    if (window.Sound) Sound.stopMusic();
     matchPending = true;
   }
 
+  // otra partida con la misma configuración
+  function restart() {
+    end();
+    start();
+  }
+
   return {
-    start, stop, pause, resume, end, configure, applyQuality,
+    start, stop, pause, resume, end, restart, configure, applyQuality,
     get mode() { return config.mode; },
+    get over() { return G.over; },
     // acceso para depurar desde la consola: Scene3D.debug.player.pos, etc.
-    get debug() { return { player, other, cam, camera, scene }; },
+    get debug() {
+      return {
+        player, other, cam, camera, scene, G, LV, config,
+        teleport(x, z) { player.pos.set(x, 0, z); },
+        give(kind, n = 1) { for (let i = 0; i < n; i++) Rules.addItem(G.inv, kind); updateLiveHud(true); },
+        relics() { G.relics = NEED; G.exitOpen = true; updateExitBeacon(); },
+        level(id) { G.scenario = id; startLevel(); },
+        win: () => levelComplete(),
+        hurt: () => hurtPlayer(player.pos.clone().add(V3(0, 0, 1))),
+      };
+    },
   };
 })();
 
