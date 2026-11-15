@@ -1,17 +1,18 @@
 # =========================================================
-# PENUMBRA — imagen para hostear (Render, Railway, Fly.io…)
-# Un solo contenedor: Node (juego + multijugador WebSocket)
-# que a su vez arranca PHP (servicio web /api). MySQL va
-# aparte (el servicio de MySQL de la plataforma) y se
-# configura con variables de entorno: DB_HOST, DB_PORT,
-# DB_NAME, DB_USER, DB_PASS (o las MYSQL* de Railway) y
-# FACEBOOK_APP_ID / FACEBOOK_APP_SECRET.
+# PENUMBRA — imagen para hostear (Render)
+# Un solo contenedor con todo:
+#   · Node: juego + multijugador WebSocket (server.js)
+#   · PHP: servicio web /api (lo arranca server.js)
+#   · MariaDB (MySQL): base de datos local (la arranca start.sh)
+# Si se define DATABASE_URL o DB_HOST se usa esa base externa
+# y no se levanta MariaDB.
 # =========================================================
 FROM node:20-bookworm-slim
 
-# PHP 8.2 de Debian con PDO MySQL, cURL (Graph API de Facebook) y mbstring
+# PHP 8.2 con PDO MySQL, cURL (Graph API de Facebook) y mbstring + MariaDB
 RUN apt-get update \
- && apt-get install -y --no-install-recommends php-cli php-mysql php-curl php-mbstring ca-certificates \
+ && apt-get install -y --no-install-recommends \
+      php-cli php-mysql php-curl php-mbstring ca-certificates mariadb-server \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -21,4 +22,4 @@ COPY . .
 
 ENV NODE_ENV=production PORT=8777
 EXPOSE 8777
-CMD ["node", "server.js"]
+CMD ["sh", "/app/start.sh"]

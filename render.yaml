@@ -1,9 +1,10 @@
 # =========================================================
 # PENUMBRA — Blueprint de Render (https://render.com)
-# Render → New → Blueprint → elige el repositorio. Crea el
-# servicio web gratis con el Dockerfile (Node + PHP, HTTPS y
-# WebSocket). La base MySQL va en Aiven (gratis): pega su
-# "Service URI" en DATABASE_URL. Ver la sección "Hostear" del README.
+# Render → New → Blueprint → elige el repositorio.
+# Un solo servicio web gratis con el Dockerfile: Node + PHP +
+# MariaDB (MySQL) dentro del mismo contenedor, con HTTPS y
+# WebSocket. En el plan gratis los puntajes se reinician cuando
+# el servicio se duerme o se vuelve a desplegar.
 # =========================================================
 services:
   - type: web
@@ -14,10 +15,6 @@ services:
     healthCheckPath: /
     autoDeploy: true
     envVars:
-      - key: DATABASE_URL          # mysql://avnadmin:…@mysql-….aivencloud.com:PUERTO/defaultdb?ssl-mode=REQUIRED
-        sync: false
-      - key: DB_SSL_CA_PEM         # opcional: el "CA certificate" de Aiven para verificar el SSL
-        sync: false
       - key: FACEBOOK_APP_ID
         value: "2221477365083151"
       - key: FACEBOOK_APP_SECRET   # opcional: Meta → tu app → Configuración → Básica

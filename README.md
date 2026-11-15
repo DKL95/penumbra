@@ -35,27 +35,24 @@ pantalla de puntajes avisa que está sin conexión. ¿Prefieres Apache de XAMPP 
 `php -S`? Copia el proyecto a `htdocs/penumbra` y arranca con
 `PHP_URL=http://localhost/penumbra/api npm start`.
 
-## Hostear en internet (Render + Aiven, gratis)
+## Hostear en internet (Render, gratis)
 
 El juego necesita Node (multijugador), PHP (servicio web), MySQL y HTTPS (Facebook lo exige).
-El `Dockerfile` empaqueta Node + PHP en un solo contenedor y `render.yaml` lo configura.
+El `Dockerfile` mete todo en **un solo contenedor**: Node + PHP + **MariaDB (MySQL)**, y
+`start.sh` crea la base `penumbra` al arrancar. `render.yaml` lo configura en Render.
 
-**1. Base de datos en Aiven** (<https://aiven.io>, plan *Free*)
-- Crea un servicio **MySQL** (Free plan). Cuando esté *Running*, copia el **Service URI**
-  (`mysql://avnadmin:…@mysql-….aivencloud.com:PUERTO/defaultdb?ssl-mode=REQUIRED`).
-- Opcional: copia también el **CA certificate** (para verificar el SSL).
-- Las tablas se crean solas en la primera petición.
-
-**2. Juego en Render** (<https://render.com>, entra con tu cuenta de GitHub)
-- *New → Blueprint* → elige el repositorio `penumbra`. Render lee `render.yaml`.
-- Llena las variables: `DATABASE_URL` = el Service URI de Aiven; `DB_SSL_CA_PEM` = el CA
-  certificate (opcional); `FACEBOOK_APP_SECRET` (opcional). `FACEBOOK_APP_ID` ya viene puesto.
-- *Apply*. Al terminar el despliegue tendrás una URL como `https://penumbra-xxxx.onrender.com`.
-  Cada `git push` a `main` vuelve a desplegar solo.
+**1. Juego en Render** (<https://render.com>, entra con tu cuenta de GitHub)
+- *New → Blueprint* → elige el repositorio `penumbra` → *Deploy Blueprint*.
+  `FACEBOOK_APP_ID` ya viene puesto; `FACEBOOK_APP_SECRET` es opcional.
+- Al terminar tendrás una URL como `https://penumbra-xxxx.onrender.com`. Cada `git push` a
+  `main` vuelve a desplegar solo.
 - Plan gratis: si nadie entra en 15 minutos el servicio se duerme y la primera carga tarda
   cerca de un minuto. **Ábrelo un rato antes de la demo.**
+- **Los puntajes se reinician** cuando el servicio se duerme o se redespliega (el disco del plan
+  gratis no es persistente). Para conservarlos, define `DATABASE_URL` con un MySQL externo
+  (p. ej. Aiven gratis, `mysql://…?ssl-mode=REQUIRED`) y el contenedor usará esa base.
 
-**3. Facebook (Meta for Developers → tu app)**
+**2. Facebook (Meta for Developers → tu app)**
 - *Configuración → Básica*: en **Dominios de la app** agrega `penumbra-xxxx.onrender.com`;
   en **URL de la política de privacidad** y en **Eliminación de datos de usuario → URL de
   instrucciones** pon `https://penumbra-xxxx.onrender.com/privacidad.html`; agrega la plataforma
