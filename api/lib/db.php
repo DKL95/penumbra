@@ -70,6 +70,22 @@ function db_connect(): PDO
     $host = cfg('db_host');
     $port = cfg('db_port');
     $name = cfg('db_name');
+    $ssl = cfg('db_ssl');
+    if ($ssl && $ssl !== '0' && $ssl !== 'false') {
+        // conexión cifrada con los certificados del sistema (MySQL administrado en la nube)
+        // DB_SSL_CA_PEM: el certificado del proveedor pegado como texto (p. ej. el "CA certificate" de Aiven)
+        $pem = getenv('DB_SSL_CA_PEM');
+        $verify = false;
+        if ($pem) {
+            $ca = sys_get_temp_dir() . '/penumbra-db-ca.pem';
+            if (!is_file($ca) || file_get_contents($ca) !== $pem) file_put_contents($ca, $pem);
+            $verify = true;
+        } else {
+            $ca = getenv('DB_SSL_CA') ?: '/etc/ssl/certs/ca-certificates.crt';
+        }
+        if (is_file($ca)) $opts[PDO::MYSQL_ATTR_SSL_CA] = $ca;
+        $opts[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = $verify;
+    }
     try {
         return new PDO("mysql:host=$host;port=$port;dbname=$name;charset=utf8mb4", cfg('db_user'), cfg('db_pass'), $opts);
     } catch (PDOException $e) {

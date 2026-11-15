@@ -1,0 +1,10 @@
+node_modules
+.git
+.vscode
+test
+*.zip
+*.docx
+lamparas
+api/config.local.php
+api/data
+TAREAS-2DO-AVANCE.md

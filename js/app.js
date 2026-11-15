@@ -422,6 +422,30 @@
     $("social-status").textContent = "Sesión cerrada.";
   }
 
+  // borrar la cuenta pide un segundo clic para confirmar (sin diálogos del navegador)
+  let deleteArmed = 0;
+  async function deleteAccount() {
+    const btn = $("btn-delete-account"), st = $("social-status");
+    if (Date.now() - deleteArmed > 4000) {
+      deleteArmed = Date.now();
+      Sound.error();
+      btn.textContent = "¿Seguro? Clic otra vez";
+      setTimeout(() => { btn.textContent = "Borrar mis datos"; }, 4000);
+      return;
+    }
+    deleteArmed = 0;
+    btn.textContent = "Borrar mis datos";
+    try {
+      await Api.deleteAccount();
+      st.className = "micro ok";
+      st.textContent = "Tu cuenta y tus puntajes se borraron del servidor.";
+      loadScores();
+    } catch (err) {
+      st.className = "micro err";
+      st.textContent = err.message;
+    }
+  }
+
   /* ---------------- Configuración ---------------- */
   const form = $("settings-form");
 
@@ -527,6 +551,7 @@
       case "login-facebook": loginFacebook(); break;
       case "login-guest": loginGuest(); break;
       case "logout": logout(); break;
+      case "delete-account": deleteAccount(); break;
       case "save-score": saveScore(); break;
       case "share": Sound.click(); shareResult(el.dataset.net); break;
       case "play-again": Sound.confirm(); playAgain(); break;

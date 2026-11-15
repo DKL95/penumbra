@@ -77,7 +77,7 @@ const Api = (() => {
       if (!i.facebookAppId) return reject(new Error("Facebook no está configurado (falta FACEBOOK_APP_ID en api/config.local.php)."));
       if (window.FB) return resolve(window.FB);
       window.fbAsyncInit = () => {
-        FB.init({ appId: i.facebookAppId, cookie: false, xfbml: false, version: "v19.0" });
+        FB.init({ appId: i.facebookAppId, cookie: false, xfbml: false, version: "v26.0" });
         resolve(FB);
       };
       const s = document.createElement("script");
@@ -108,6 +108,15 @@ const Api = (() => {
       try { await call("auth.php", { method: "DELETE", auth: true }); } catch { /* da igual */ }
       if (window.FB && session.user && session.user.provider === "facebook") { try { FB.logout(() => {}); } catch { /* sin sesión de FB */ } }
     }
+    setSession(null);
+  }
+
+  // borra la cuenta del servidor con todos sus puntajes
+  async function deleteAccount() {
+    await call("auth.php?cuenta=1", { method: "DELETE", auth: true });
+    if (window.FB && session && session.user && session.user.provider === "facebook") { try { FB.logout(() => {}); } catch { /* sin sesión de FB */ } }
+    write(K_LOCAL, null);
+    write(K_GUEST, null);
     setSession(null);
   }
 
@@ -166,7 +175,7 @@ const Api = (() => {
   }
 
   return {
-    info, loginGuest, loginFacebook, loadFacebook, logout, refresh, submit, list, onChange,
+    info, loginGuest, loginFacebook, loadFacebook, logout, deleteAccount, refresh, submit, list, onChange,
     get user() { return session ? session.user : null; },
   };
 })();

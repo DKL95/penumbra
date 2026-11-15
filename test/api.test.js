@@ -172,3 +172,15 @@ test("la fórmula de PHP coincide con la de js/rules.js", { skip }, () => {
   assert.equal(php.status, 0, String(php.stderr));
   assert.deepEqual(JSON.parse(String(php.stdout)), cases.map(Rules.score));
 });
+
+test("auth.php DELETE ?cuenta=1 borra la cuenta y sus puntajes", { skip }, async () => {
+  const { data: s } = await api("auth.php", { method: "POST", body: { provider: "guest", name: "Borrable" } });
+  await api("scores.php", { method: "POST", token: s.token, body: stats({ mode: "survival", scenario: "mansion", relics: 50, seconds: 900, levels: 0, levelsPlayed: 1, result: "caught" }) });
+  assert.ok((await api("scores.php?mode=survival&limit=50")).data.scores.some((x) => x.name === "Borrable"));
+  assert.equal((await api("auth.php?cuenta=1", { method: "DELETE" })).status, 401);   // sin sesión no
+  const del = await api("auth.php?cuenta=1", { method: "DELETE", token: s.token });
+  assert.equal(del.status, 200);
+  assert.equal(del.data.deleted, true);
+  assert.ok(!(await api("scores.php?mode=survival&limit=50")).data.scores.some((x) => x.name === "Borrable"));
+  assert.equal((await api("auth.php", { token: s.token })).status, 401);
+});
