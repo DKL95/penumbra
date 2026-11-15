@@ -1150,14 +1150,16 @@ const Scene3D = (() => {
     }
 
     // --- comedor (ala oeste) ---
-    const tx = -3.6, tz1 = 13.0, tz2 = 18.0, tzm = (tz1 + tz2) / 2;
+    // la mesa termina en z = 17 para dejar paso (~1 m) entre ella y la escalera
+    // hacia el rincón noroeste del salón, donde está un fragmento de la llave
+    const tx = -3.6, tz1 = 13.0, tz2 = 17.0, tzm = (tz1 + tz2) / 2;
     box(1.1, 0.08, tz2 - tz1, M.woodMid, tx, 0.78, tzm);
     box(1.22, 0.02, tz2 - tz1 + 0.12, M.linen, tx, 0.83, tzm);
     for (const sx of [-1, 1]) {
       box(0.02, 0.3, tz2 - tz1 + 0.12, M.linen, tx + sx * 0.61, 0.68, tzm);
       for (const z of [tz1 + 0.3, tzm, tz2 - 0.3]) cyl(0.06, 0.07, 0.76, M.woodDark, tx + sx * 0.45, 0.38, z);
     }
-    [13.7, 14.9, 16.1, 17.3].forEach((z, i) => {
+    [13.6, 14.6, 15.6, 16.5].forEach((z, i) => {
       chair(tx - 0.95, z, Math.PI / 2);
       if (i !== 2) chair(tx + 0.95, z, -Math.PI / 2);
       // platos y copas
@@ -1242,8 +1244,10 @@ const Scene3D = (() => {
     portrait(1.3, 1.6, 0, top + 1.2, z2 - 0.19, Math.PI, 0.03);
     OBSTACLES.push({ x1: -sw / 2 - 0.2, x2: sw / 2 + 0.2, z1: sz0 - 0.25, z2: z2 });
 
-    armor(-2.3, 17.4, 0.3);
-    armor(2.3, 17.4, -0.3);
+    // armaduras contra la pared del fondo, a los lados de la escalera
+    // (antes estaban en z = 17.4 y tapaban el paso al rincón noroeste)
+    armor(-2.3, 20.95, 0.15);
+    armor(2.3, 20.95, -0.15);
 
     // --- lámpara de araña grande ---
     const ch = new THREE.Group();
