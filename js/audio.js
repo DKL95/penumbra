@@ -1,8 +1,9 @@
 /* =========================================================
    PENUMBRA — Audio procedural (Web Audio API)
-   Genera un drone de ambiente y sonidos de interfaz sin
-   archivos externos. Se sustituirá / complementará con
-   archivos reales de música y efectos en avances posteriores.
+   Todo el sonido se genera por código, sin archivos externos:
+   música de fondo por escenario (drone + melodía generativa
+   con eco), tensión según la distancia al monstruo, pasos
+   según el suelo y efectos de ítems, golpes y fin de partida.
    ========================================================= */
 
 const Sound = (() => {
