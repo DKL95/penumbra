@@ -257,7 +257,9 @@
     $("result-points").textContent = s.points.toLocaleString("es-MX");
     const rows = [
       ["Modo", Rules.MODES[s.mode].label],
-      ["Escenario", s.scenario === "campaign" ? `Campaña · llegaste a ${s.reached}` : s.scenarioLabel],
+      ["Escenario", s.scenario !== "campaign" ? s.scenarioLabel
+        : s.won && s.levels >= Rules.CAMPAIGN.length ? "Campaña completa · los 3 escenarios"
+        : `Campaña · llegaste a ${s.reached}`],
       ["Dificultad", Rules.difficulty(s.difficulty).label],
       ["Tiempo", Rules.formatTime(s.seconds)],
       ["Reliquias", String(s.relics)],
