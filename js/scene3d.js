@@ -2,7 +2,8 @@
    PENUMBRA — Motor 3D (WebGL / Three.js) y partida
    Tres escenarios totalmente distintos, cada uno en su propia
    THREE.Scene:
-     · Mansión Ravenwood (este archivo): estudio, pasillo y gran salón.
+     · Mansión Ravenwood (este archivo): estudio, pasillo, biblioteca,
+       cocina y gran salón.
      · Hospital San Judas (js/levels/hospital.js).
      · Bosque de Ceniza (js/levels/forest.js), al aire libre.
    Construidos con figuras básicas, texturas procedurales en
@@ -42,6 +43,15 @@ const Scene3D = (() => {
   const DOOR_HALF = 0.67;                                        // medio ancho del hueco de la puerta
   const CORR = { x1: -1.1, x2: 1.1, z1: ROOM.d / 2, z2: 11.5, h: 3.0 };   // pasillo
   const HALL = { x1: -6, x2: 6, z1: 11.5, z2: 21.5, h: 4.6 };             // gran salón
+  // alas a los lados del pasillo, entre el estudio y el gran salón
+  const LIB = { x1: -6, x2: CORR.x1, z1: ROOM.d / 2, z2: HALL.z1, h: 3.0 };   // biblioteca (oeste)
+  const KIT = { x1: CORR.x2, x2: 6, z1: ROOM.d / 2, z2: HALL.z1, h: 3.0 };    // cocina (este)
+  // pasos (huecos de 1.2 m en los muros)
+  const LIB_DOOR = { x1: -3.0, x2: -1.8 };        // estudio → biblioteca (pared norte del estudio)
+  const LIB_SIDE = { z1: 8.6, z2: 9.8 };          // pasillo → biblioteca (pared oeste del pasillo)
+  const KIT_SIDE = { z1: 9.0, z2: 10.2 };         // pasillo → cocina (pared este del pasillo)
+  const KIT_HALL = { x1: 2.5, x2: 3.5 };          // cocina → gran salón (pared sur del salón)
+  const MANSION_EXIT_Z = 18.7;                    // puerta principal, en la pared oeste del salón
 
   // Datos del escenario activo. Cada escenario tiene sus propias listas;
   // al cambiar de nivel se reasignan (ver activateLevel).
@@ -292,6 +302,24 @@ const Scene3D = (() => {
     return c;
   }
 
+  // baldosas de la cocina: ajedrez blanco sucio y negro, con juntas y manchas
+  function tileCanvas() {
+    const c = cvs(256), x = c.getContext("2d");
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+      const v = (i + j) % 2 ? 20 + Math.random() * 10 : 120 + Math.random() * 25;
+      x.fillStyle = `rgb(${v + 6},${v + 2},${v - 4})`;
+      x.fillRect(i * 64, j * 64, 64, 64);
+    }
+    x.strokeStyle = "rgba(10,8,6,.8)"; x.lineWidth = 3;
+    for (let k = 0; k <= 256; k += 64) { x.beginPath(); x.moveTo(k, 0); x.lineTo(k, 256); x.moveTo(0, k); x.lineTo(256, k); x.stroke(); }
+    for (let n = 0; n < 6; n++) {
+      x.fillStyle = `rgba(40,25,10,${0.08 + Math.random() * 0.12})`;
+      x.beginPath(); x.arc(Math.random() * 256, Math.random() * 256, 10 + Math.random() * 30, 0, Math.PI * 2); x.fill();
+    }
+    grain(x, 256, 256, 6000, 0.25);
+    return c;
+  }
+
   // salpicadura de sangre (con transparencia, para calcomanías)
   function bloodCanvas(seed = 1) {
     const c = cvs(256), x = c.getContext("2d");
@@ -385,6 +413,27 @@ const Scene3D = (() => {
     return m;
   }
 
+  // marco de madera alrededor de un hueco de 2.3 m de alto en un muro;
+  // axis "x": el muro corre a lo largo de x (está en z = c), "z": corre a lo largo de z (en x = c)
+  function doorFrame(a, b, c, axis) {
+    const w = b - a, m = (a + b) / 2;
+    if (axis === "x") {
+      for (const x of [a - 0.06, b + 0.06]) box(0.12, 2.3, 0.38, M.trim, x, 1.15, c);
+      box(w + 0.24, 0.14, 0.38, M.trim, m, 2.37, c);
+    } else {
+      for (const z of [a - 0.06, b + 0.06]) box(0.38, 2.3, 0.12, M.trim, c, 1.15, z);
+      box(0.38, 0.14, w + 0.24, M.trim, c, 2.37, m);
+    }
+  }
+
+  // revestimiento sin colisión pegado a la cara de un muro (otro material en el cuarto de al lado)
+  function facing(x1, x2, z1, z2, y0, y1, mat) {
+    const len = Math.max(x2 - x1, z2 - z1), hh = y1 - y0;
+    const m = box(x2 - x1, hh, z2 - z1, mat.map ? tiled(mat, len / 3, hh / 2.125) : mat, (x1 + x2) / 2, y0 + hh / 2, (z1 + z2) / 2);
+    m.castShadow = false;
+    return m;
+  }
+
   function floorPlane(x1, x2, z1, z2, y, mat, tileM, down = false) {
     const w = x2 - x1, d = z2 - z1;
     const p = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat.map ? tiled(mat, w / tileM, d / tileM) : mat);
@@ -438,6 +487,11 @@ const Scene3D = (() => {
     M.ivory = new THREE.MeshStandardMaterial({ color: 0xcfc7b4, roughness: 0.4 });
     M.night = new THREE.MeshBasicMaterial({ color: 0x0d1526 });
     M.mirror = new THREE.MeshStandardMaterial({ color: 0x8a9298, roughness: 0.08, metalness: 1 });
+    // biblioteca y cocina
+    M.tile = new THREE.MeshStandardMaterial({ map: tex(tileCanvas(), 1, 1), roughness: 0.45 });
+    M.copper = new THREE.MeshStandardMaterial({ color: 0x7a4426, roughness: 0.35, metalness: 0.85 });
+    M.meat = new THREE.MeshStandardMaterial({ color: 0x5a1012, roughness: 0.5 });
+    M.green = new THREE.MeshStandardMaterial({ color: 0x1d3a24, roughness: 0.6, emissive: 0x041208 });
   }
 
   /* ============================================================
@@ -460,13 +514,19 @@ const Scene3D = (() => {
     wallBox(-w / 2 - 0.15, -w / 2 + 0.15, -d / 2, d / 2, h, M.wall);
     wallBox(w / 2 - 0.15, w / 2 + 0.15, -d / 2, d / 2, h, M.wall);
     // pared sur con el hueco de la puerta que lleva al pasillo
-    wallBox(-w / 2 - 0.15, -D, d / 2 - 0.15, d / 2 + 0.15, h, M.wall);
+    // y, al oeste, el paso a la biblioteca (x de LIB_DOOR.x1 a LIB_DOOR.x2)
+    wallBox(-w / 2 - 0.15, LIB_DOOR.x1, d / 2 - 0.15, d / 2 + 0.15, h, M.wall);
+    wallBox(LIB_DOOR.x2, -D, d / 2 - 0.15, d / 2 + 0.15, h, M.wall);
+    wallBox(LIB_DOOR.x1, LIB_DOOR.x2, d / 2 - 0.15, d / 2 + 0.15, h - 2.3, M.wall, 2.3);
     wallBox(D, w / 2 + 0.15, d / 2 - 0.15, d / 2 + 0.15, h, M.wall);
     wallBox(-D, D, d / 2 - 0.15, d / 2 + 0.15, h - 2.35, M.wall, 2.35);
 
     // zócalos y molduras
     box(w, 0.22, 0.06, M.trim, 0, 0.11, -d / 2 + 0.17);
-    for (const sx of [-1, 1]) box(w / 2 - 0.75, 0.22, 0.06, M.trim, sx * (w / 4 + 0.375), 0.11, d / 2 - 0.17);
+    const runX = (x1, x2, y, hh, dd, mat, z) => box(x2 - x1, hh, dd, mat, (x1 + x2) / 2, y, z);
+    runX(-w / 2, LIB_DOOR.x1, 0.11, 0.22, 0.06, M.trim, d / 2 - 0.17);
+    runX(LIB_DOOR.x2, -0.75, 0.11, 0.22, 0.06, M.trim, d / 2 - 0.17);
+    runX(0.75, w / 2, 0.11, 0.22, 0.06, M.trim, d / 2 - 0.17);
     for (const z of [-d / 2 + 0.17, d / 2 - 0.17]) box(w, 0.12, 0.08, M.trim, 0, h - 0.14, z);
     for (const x of [-w / 2 + 0.17, w / 2 - 0.17]) {
       box(0.06, 0.22, d, M.trim, x, 0.11, 0);
@@ -474,7 +534,10 @@ const Scene3D = (() => {
     }
     // panelado bajo
     box(0.04, 1.0, d - 0.4, M.woodDark, -w / 2 + 0.19, 0.55, 0);
-    for (const sx of [-1, 1]) box(w / 2 - 0.95, 1.0, 0.04, M.woodDark, sx * (w / 4 + 0.425), 0.55, d / 2 - 0.19);
+    runX(-w / 2 + 0.05, LIB_DOOR.x1 - 0.06, 0.55, 1.0, 0.04, M.woodDark, d / 2 - 0.19);
+    runX(LIB_DOOR.x2 + 0.06, -0.9, 0.55, 1.0, 0.04, M.woodDark, d / 2 - 0.19);
+    runX(0.9, w / 2 - 0.05, 0.55, 1.0, 0.04, M.woodDark, d / 2 - 0.19);
+    doorFrame(LIB_DOOR.x1, LIB_DOOR.x2, d / 2, "x");
 
     // vigas del techo
     for (let i = -1; i <= 1; i++)
@@ -898,15 +961,17 @@ const Scene3D = (() => {
   }
 
   function buildDust() {
-    const N = 320;
+    const N = 380;
     const pos = new Float32Array(N * 3);
     const zones = [
       [-ROOM.w / 2, ROOM.w / 2, -ROOM.d / 2, ROOM.d / 2],
       [CORR.x1, CORR.x2, CORR.z1, CORR.z2],
       [HALL.x1, HALL.x2, HALL.z1, HALL.z2],
+      [LIB.x1, LIB.x2, LIB.z1, LIB.z2],
+      [KIT.x1, KIT.x2, KIT.z1, KIT.z2],
     ];
     for (let i = 0; i < N; i++) {
-      const [x1, x2, z1, z2] = zones[i < 130 ? 0 : i < 170 ? 1 : 2];
+      const [x1, x2, z1, z2] = zones[i < 100 ? 0 : i < 130 ? 1 : i < 230 ? 2 : i < 305 ? 3 : 4];
       pos[i * 3] = x1 + Math.random() * (x2 - x1);
       pos[i * 3 + 1] = Math.random() * ROOM.h;
       pos[i * 3 + 2] = z1 + Math.random() * (z2 - z1);
@@ -964,17 +1029,6 @@ const Scene3D = (() => {
     return l;
   }
 
-  function sideDoor(x, z, side) {
-    // puerta cerrada en la pared del pasillo (side = -1 oeste, 1 este)
-    const fx = x - side * 0.02;
-    box(0.2, 0.14, 1.3, M.trim, fx, 2.3, z);
-    box(0.2, 2.3, 0.12, M.trim, fx, 1.15, z - 0.6);
-    box(0.2, 2.3, 0.12, M.trim, fx, 1.15, z + 0.6);
-    box(0.06, 2.24, 1.1, M.woodMid, x - side * 0.05, 1.12, z);
-    for (let iy = 0; iy < 3; iy++) box(0.03, 0.56, 0.8, M.woodDark, x - side * 0.09, 0.5 + iy * 0.7, z);
-    sph(0.05, M.brass, x - side * 0.12, 1.1, z + 0.4);
-  }
-
   function portrait(pw, ph, x, y, z, ry, tilt = 0) {
     const g = new THREE.Group();
     g.position.set(x, y, z); g.rotation.set(0, ry, tilt);
@@ -991,13 +1045,24 @@ const Scene3D = (() => {
     const { x1, x2, z1, z2, h } = CORR;
     floorPlane(x1, x2, z1, z2, 0, M.floor, 3);
     floorPlane(x1, x2, z1, z2, h, M.ceiling, 3, true);
-    wallBox(x1 - 0.15, x1 + 0.15, z1, z2, h, M.wall);
-    wallBox(x2 - 0.15, x2 + 0.15, z1, z2, h, M.wall);
+    // muros con un paso a la biblioteca (oeste) y otro a la cocina (este)
+    const gaps = { [x1]: LIB_SIDE, [x2]: KIT_SIDE };
+    for (const x of [x1, x2]) {
+      const g = gaps[x];
+      wallBox(x - 0.15, x + 0.15, z1, g.z1, h, M.wall);
+      wallBox(x - 0.15, x + 0.15, g.z2, z2, h, M.wall);
+      wallBox(x - 0.15, x + 0.15, g.z1, g.z2, h - 2.3, M.wall, 2.3);
+      doorFrame(g.z1, g.z2, x, "z");
+    }
     const len = z2 - z1, mid = (z1 + z2) / 2;
+    const runZ = (za, zb, x, y, ww, hh, mat) => box(ww, hh, zb - za, mat, x, y, (za + zb) / 2);
     for (const x of [x1 + 0.17, x2 - 0.17]) {
-      box(0.06, 0.22, len, M.trim, x, 0.11, mid);
+      const g = x < 0 ? LIB_SIDE : KIT_SIDE;
+      for (const [za, zb] of [[z1, g.z1 - 0.06], [g.z2 + 0.06, z2]]) {
+        runZ(za, zb, x, 0.11, 0.06, 0.22, M.trim);
+        runZ(za, zb, x + (x < 0 ? 0.02 : -0.02), 0.52, 0.04, 0.95, M.woodDark);
+      }
       box(0.08, 0.12, len, M.trim, x, h - 0.14, mid);
-      box(0.04, 0.95, len, M.woodDark, x + (x < 0 ? 0.02 : -0.02), 0.52, mid);
     }
     for (let z = z1 + 1.5; z < z2; z += 2) box(x2 - x1, 0.14, 0.18, M.woodDark, 0, h - 0.08, z);
 
@@ -1008,10 +1073,7 @@ const Scene3D = (() => {
     run.receiveShadow = true;
     scene.add(run);
 
-    sideDoor(x1 + 0.15, 6.2, -1);
-    sideDoor(x2 - 0.15, 9.6, 1);
-
-    portrait(0.6, 0.8, x1 + 0.19, 1.8, 8.3, Math.PI / 2, 0.05);
+    portrait(0.6, 0.8, x1 + 0.19, 1.8, 6.6, Math.PI / 2, 0.05);
     portrait(0.7, 0.9, x2 - 0.19, 1.85, 5.0, -Math.PI / 2, -0.04);
     // un retrato caído, apoyado contra la pared
     const fallen = portrait(0.7, 0.9, x2 - 0.32, 0.45, 7.9, -Math.PI / 2, 0);
@@ -1122,7 +1184,11 @@ const Scene3D = (() => {
     floorPlane(x1, x2, z1, z2, 0, M.marble, 3);
     floorPlane(x1, x2, z1, z2, h, M.ceiling, 3, true);
     wallBox(x1 - 0.15, -D, z1 - 0.15, z1 + 0.15, h, M.wallRed);
-    wallBox(D, x2 + 0.15, z1 - 0.15, z1 + 0.15, h, M.wallRed);
+    // ala este del muro sur: paso a la cocina
+    wallBox(D, KIT_HALL.x1, z1 - 0.15, z1 + 0.15, h, M.wallRed);
+    wallBox(KIT_HALL.x2, x2 + 0.15, z1 - 0.15, z1 + 0.15, h, M.wallRed);
+    wallBox(KIT_HALL.x1, KIT_HALL.x2, z1 - 0.15, z1 + 0.15, h - 2.3, M.wallRed, 2.3);
+    doorFrame(KIT_HALL.x1, KIT_HALL.x2, z1, "x");
     wallBox(-D, D, z1 - 0.15, z1 + 0.15, h - CORR.h, M.wallRed, CORR.h);
     wallBox(x1 - 0.15, x2 + 0.15, z2 - 0.15, z2 + 0.15, h, M.wallRed);
     wallBox(x1 - 0.15, x1 + 0.15, z1, z2, h, M.wallRed);
@@ -1136,7 +1202,9 @@ const Scene3D = (() => {
     }
     box(W, 1.15, 0.05, M.woodDark, 0, 0.58, z2 - 0.17);
     box(W, 0.18, 0.1, M.trim, 0, h - 0.12, z2 - 0.17);
-    for (const sx of [-1, 1]) box(x2 - D - 0.05, 1.15, 0.05, M.woodDark, sx * (D + (x2 - D) / 2), 0.58, z1 + 0.17);
+    box(x2 - D - 0.05, 1.15, 0.05, M.woodDark, -(D + (x2 - D) / 2), 0.58, z1 + 0.17);
+    box(KIT_HALL.x1 - 0.06 - D, 1.15, 0.05, M.woodDark, (D + KIT_HALL.x1 - 0.06) / 2, 0.58, z1 + 0.17);
+    box(x2 - KIT_HALL.x2 - 0.06, 1.15, 0.05, M.woodDark, (x2 + KIT_HALL.x2 + 0.06) / 2, 0.58, z1 + 0.17);
     box(W, 0.18, 0.1, M.trim, 0, h - 0.12, z1 + 0.17);
     for (let x = x1 + 2; x < x2; x += 2) box(0.22, 0.2, L, M.woodDark, x, h - 0.1, mz);
 
@@ -1280,26 +1348,275 @@ const Scene3D = (() => {
     redLight.position.set(x1 + 0.8, 2.5, tzm);
     scene.add(redLight);
 
-    // --- puerta principal (SALIDA): doble hoja en el muro norte, ala oeste ---
-    const ex = -4.6, ez = z1 + 0.17;
-    box(2.0, 0.22, 0.2, M.trim, ex, 2.75, ez);
-    for (const sx of [-0.95, 0.95]) box(0.2, 2.75, 0.2, M.trim, ex + sx, 1.37, ez);
+    // retrato grande donde antes estaba la salida (detrás está la biblioteca)
+    portrait(1.0, 1.3, -4.6, 2.3, z1 + 0.19, 0, -0.02);
+
+    // --- puerta principal (SALIDA): doble hoja en el muro oeste, la fachada de la casa ---
+    const door = new THREE.Group();
+    door.position.set(x1 + 0.17, 0, MANSION_EXIT_Z);
+    door.rotation.y = Math.PI / 2;            // su +z local apunta hacia el salón (+x)
+    scene.add(door);
+    box(2.0, 0.22, 0.2, M.trim, 0, 2.75, 0, door);
+    for (const sx of [-0.95, 0.95]) box(0.2, 2.75, 0.2, M.trim, sx, 1.37, 0, door);
     for (const sx of [-0.43, 0.43]) {
-      box(0.84, 2.6, 0.08, M.woodMid, ex + sx, 1.3, ez + 0.04);
-      for (let iy = 0; iy < 3; iy++) box(0.6, 0.62, 0.03, M.woodDark, ex + sx, 0.5 + iy * 0.8, ez + 0.1);
+      box(0.84, 2.6, 0.08, M.woodMid, sx, 1.3, 0.04, door);
+      for (let iy = 0; iy < 3; iy++) box(0.6, 0.62, 0.03, M.woodDark, sx, 0.5 + iy * 0.8, 0.1, door);
     }
     // cadenas y candado: el superviviente necesita los 3 fragmentos de la llave
     for (const r of [0.5, -0.5]) {
-      const ch = box(1.5, 0.04, 0.04, M.steel, ex, 1.25, ez + 0.14);
-      ch.rotation.z = r;
+      const chain = box(1.5, 0.04, 0.04, M.steel, 0, 1.25, 0.14, door);
+      chain.rotation.z = r;
     }
-    box(0.18, 0.2, 0.08, M.brass, ex, 1.25, ez + 0.18);
+    box(0.18, 0.2, 0.08, M.brass, 0, 1.25, 0.18, door);
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.28),
       new THREE.MeshBasicMaterial({ map: writingCanvas("SALIDA"), transparent: true }));
-    sign.position.set(ex, 3.1, ez + 0.12);
-    scene.add(sign);
+    sign.position.set(0, 3.1, 0.12);
+    door.add(sign);
   }
 
+
+  /* ============================================================
+     ALAS NUEVAS: BIBLIOTECA (oeste) Y COCINA (este)
+     Ocupan el espacio entre el estudio y el gran salón, a los lados
+     del pasillo. Cada una tiene dos entradas, así que forman circuitos:
+       estudio ↔ biblioteca ↔ pasillo   y   pasillo ↔ cocina ↔ gran salón
+     ============================================================ */
+
+  // librero de pie con baldas y lomos; mira hacia +x local (ry gira el conjunto)
+  const bookMats = [];
+  function bookcase(x, z, W, ry, H = 2.5) {
+    if (!bookMats.length) for (let i = 0; i < 3; i++)
+      bookMats.push(new THREE.MeshStandardMaterial({ map: tex(bookRowCanvas(), 1, 1), roughness: 0.9 }));
+    const g = new THREE.Group();
+    g.position.set(x, 0, z); g.rotation.y = ry;
+    scene.add(g);
+    box(0.38, H, 0.06, M.woodDark, 0, H / 2, -W / 2, g);
+    box(0.38, H, 0.06, M.woodDark, 0, H / 2, W / 2, g);
+    box(0.08, H, W, M.woodDark, -0.16, H / 2, 0, g);           // fondo
+    box(0.46, 0.08, W + 0.08, M.trim, 0.02, H + 0.04, 0, g);   // cornisa
+    const shelves = H > 2 ? 5 : 3;
+    for (let s = 0; s < shelves; s++) {
+      const sy = 0.12 + s * ((H - 0.4) / (shelves - 1));
+      box(0.36, 0.04, W - 0.06, M.woodDark, 0, sy, 0, g);
+      if (s === shelves - 1) continue;
+      const row = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.36, W - 0.16), bookMats[(s + bookMats.length) % 3]);
+      row.position.set(0.02, sy + 0.2, (Math.random() - 0.5) * 0.06);
+      row.castShadow = row.receiveShadow = true;
+      g.add(row);
+      // algún libro suelto, inclinado
+      if (Math.random() < 0.6) {
+        const bk = box(0.22, 0.3, 0.05, new THREE.MeshStandardMaterial({
+          color: new THREE.Color(`hsl(${Math.random() * 360},25%,18%)`), roughness: 0.9,
+        }), 0.04, sy + 0.17, -W / 2 + 0.2 + Math.random() * (W - 0.4), g);
+        bk.rotation.x = (Math.random() - 0.5) * 0.7;
+      }
+    }
+    return g;
+  }
+
+  function buildLibrary() {
+    const { x1, x2, z1, z2, h } = LIB;
+    const ix1 = x1 + 0.15, ix2 = x2 - 0.15, iz1 = z1 + 0.15, iz2 = z2 - 0.15;   // caras interiores
+    floorPlane(x1, x2, z1, z2, 0, M.floor, 3);
+    floorPlane(x1, x2, z1, z2, h, M.ceiling, 3, true);
+    // muros propios: fachada oeste y el tramo sur que el estudio no cubre
+    wallBox(x1 - 0.15, x1 + 0.15, z1 - 0.15, z2, h, M.wall);
+    wallBox(x1 - 0.15, -ROOM.w / 2 - 0.15, z1 - 0.15, z1 + 0.15, h, M.wall);
+    // el muro del salón es de damasco rojo por el otro lado: aquí, papel tapiz
+    facing(ix1, ix2, iz2 - 0.02, iz2, 0, h, M.wall);
+    // zócalo, cornisa y vigas
+    box(ix2 - ix1, 0.12, 0.08, M.trim, (ix1 + ix2) / 2, h - 0.14, iz2 - 0.06);
+    box(0.08, 0.12, iz2 - iz1, M.trim, ix1 + 0.06, h - 0.14, (iz1 + iz2) / 2);
+    box(0.06, 0.22, iz2 - iz1, M.trim, ix1 + 0.05, 0.11, (iz1 + iz2) / 2);
+    for (let z = iz1 + 1.4; z < iz2; z += 2) box(ix2 - ix1, 0.14, 0.18, M.woodDark, (ix1 + ix2) / 2, h - 0.08, z);
+
+    // libreros contra la fachada oeste (con un hueco donde se apoya la escalera)
+    for (const [za, zb] of [[4.2, 6.0], [6.6, 8.4]]) {
+      bookcase(ix1 + 0.2, (za + zb) / 2, zb - za, 0);
+      OBSTACLES.push({ x1: ix1, x2: ix1 + 0.42, z1: za, z2: zb });
+    }
+    // librero doble exento: separa el rincón noroeste (pasillos para esconderse)
+    const sx1 = -5.1, sx2 = -2.7, sz = 9.6, sw = sx2 - sx1;
+    bookcase((sx1 + sx2) / 2, sz + 0.2, sw, -Math.PI / 2);
+    bookcase((sx1 + sx2) / 2, sz - 0.2, sw, Math.PI / 2);
+    OBSTACLES.push({ x1: sx1, x2: sx2, z1: sz - 0.42, z2: sz + 0.42 });
+    // librero bajo contra la pared del estudio, junto al paso
+    bookcase(-4.1, iz1 + 0.2, 1.4, -Math.PI / 2, 1.3);
+    OBSTACLES.push({ x1: -4.8, x2: -3.4, z1: iz1, z2: iz1 + 0.42 });
+
+    // escalera de mano apoyada entre los dos libreros
+    const lad = new THREE.Group();
+    lad.position.set(ix1 + 0.32, 0, 6.3); lad.rotation.z = 0.18;
+    scene.add(lad);
+    for (const dz of [-0.2, 0.2]) box(0.05, 2.6, 0.05, M.woodMid, 0, 1.3, dz, lad);
+    for (let y = 0.3; y < 2.5; y += 0.32) box(0.04, 0.04, 0.4, M.woodMid, 0, y, 0, lad);
+
+    // mesa de lectura con lámpara verde y una vela
+    const tx = -3.7, tz = 6.4;
+    box(1.0, 0.07, 1.8, M.woodMid, tx, 0.78, tz);
+    for (const ax of [-0.42, 0.42]) for (const az of [-0.8, 0.8]) cyl(0.04, 0.05, 0.76, M.woodDark, tx + ax, 0.38, tz + az);
+    cyl(0.07, 0.09, 0.03, M.brass, tx - 0.2, 0.83, tz - 0.5);
+    cyl(0.012, 0.012, 0.3, M.brass, tx - 0.2, 0.98, tz - 0.5);
+    const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.16, 0.12, 16, 1, true), M.green);
+    shade.position.set(tx - 0.2, 1.13, tz - 0.5);
+    scene.add(shade);
+    const lamp = new THREE.PointLight(0xc8ffb0, 0.9, 5, 2);
+    lamp.position.set(tx - 0.2, 1.0, tz - 0.5);
+    scene.add(lamp);
+    flickers.push({ light: lamp, base: 0.9, phase: 2.1 });
+    for (let i = 0; i < 4; i++) {
+      const pg = box(0.22, 0.01, 0.3, M.paper, tx + (Math.random() - 0.5) * 0.6, 0.825, tz + 0.1 + Math.random() * 0.6);
+      pg.rotation.y = Math.random() * 3;
+    }
+    cyl(0.03, 0.04, 0.14, M.wax, tx + 0.25, 0.89, tz + 0.55);
+    flameMesh(0.9).position.set(tx + 0.25, 1.01, tz + 0.55);
+    // sillas del lado este (una apartada, como si alguien se hubiera levantado deprisa)
+    chair(tx + 0.85, tz - 0.4, -Math.PI / 2);
+    chair(tx + 1.1, tz + 0.6, -Math.PI / 2 + 0.7);
+    OBSTACLES.push({ x1: tx - 0.5, x2: tx + 0.5, z1: tz - 0.9, z2: tz + 0.9 });
+    OBSTACLES.push({ x1: tx + 0.6, x2: tx + 1.1, z1: tz - 0.65, z2: tz - 0.15 });
+    OBSTACLES.push({ x1: tx + 0.85, x2: tx + 1.35, z1: tz + 0.35, z2: tz + 0.85 });
+    const rug = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 3.4), M.rug);
+    rug.rotation.x = -Math.PI / 2; rug.position.set(tx + 0.2, 0.012, tz);
+    rug.receiveShadow = true;
+    scene.add(rug);
+
+    // globo terráqueo
+    const gx = -1.95, gz = 7.4;
+    cyl(0.18, 0.22, 0.05, M.woodDark, gx, 0.03, gz);
+    cyl(0.03, 0.03, 0.8, M.woodDark, gx, 0.42, gz);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.015, 8, 28), M.brass);
+    ring.position.set(gx, 1.05, gz); ring.rotation.y = 0.6;
+    scene.add(ring);
+    const globe = sph(0.26, new THREE.MeshStandardMaterial({ map: tex(paintingCanvas(), 1, 1), roughness: 0.7 }), gx, 1.05, gz);
+    globe.rotation.z = 0.4;
+    OBSTACLES.push({ x1: gx - 0.3, x2: gx + 0.3, z1: gz - 0.3, z2: gz + 0.3 });
+
+    // libros tirados y un rastro de sangre hacia el rincón noroeste
+    for (let i = 0; i < 9; i++) {
+      const bk = box(0.16, 0.04, 0.22, new THREE.MeshStandardMaterial({
+        color: new THREE.Color(`hsl(${Math.random() * 360},25%,16%)`), roughness: 0.9,
+      }), -4.8 + Math.random() * 2.6, 0.02, 8.55 + Math.random() * 0.4);
+      bk.rotation.y = Math.random() * 3;
+    }
+    [[-2.3, 10.4], [-3.0, 10.7], [-3.8, 10.9], [-4.6, 10.8]].forEach(([dx, dz], i) =>
+      decal(bloodCanvas(0), 0.4, 0.4, dx, 0.014, dz, -Math.PI / 2, 0, i * 1.3));
+    decal(writingCanvas("SHHH..."), 1.6, 0.5, -3.9, 1.9, iz2 - 0.03, 0, Math.PI);
+
+    portrait(0.8, 1.0, -2.4, 1.9, iz1 + 0.04, 0, 0.04);
+    sconce(ix2, 5.2, 1);
+    // relleno frío para leer los pasillos entre libreros
+    const fill = new THREE.PointLight(0x8f9bcb, 0.7, 9, 2);
+    fill.position.set(-3.6, 2.5, 8.8);
+    scene.add(fill);
+  }
+
+  function buildKitchen() {
+    const { x1, x2, z1, z2, h } = KIT;
+    const ix1 = x1 + 0.15, ix2 = x2 - 0.15, iz1 = z1 + 0.15, iz2 = z2 - 0.15;
+    floorPlane(x1, x2, z1, z2, 0, M.tile, 1.2);
+    floorPlane(x1, x2, z1, z2, h, M.ceiling, 3, true);
+    wallBox(x2 - 0.15, x2 + 0.15, z1 - 0.15, z2, h, M.brick);
+    wallBox(ROOM.w / 2 + 0.15, x2 + 0.15, z1 - 0.15, z1 + 0.15, h, M.brick);
+    // ladrillo sobre los muros que comparte con el estudio, el pasillo y el salón
+    facing(ix1, ix2, iz1, iz1 + 0.02, 0, h, M.brick);
+    facing(ix1, ix1 + 0.02, iz1, KIT_SIDE.z1 - 0.12, 0, h, M.brick);
+    facing(ix1, ix1 + 0.02, KIT_SIDE.z2 + 0.12, iz2, 0, h, M.brick);
+    facing(ix1, ix1 + 0.02, KIT_SIDE.z1 - 0.12, KIT_SIDE.z2 + 0.12, 2.44, h, M.brick);
+    facing(ix1, KIT_HALL.x1 - 0.12, iz2 - 0.02, iz2, 0, h, M.brick);
+    facing(KIT_HALL.x2 + 0.12, ix2, iz2 - 0.02, iz2, 0, h, M.brick);
+    facing(KIT_HALL.x1 - 0.12, KIT_HALL.x2 + 0.12, iz2 - 0.02, iz2, 2.44, h, M.brick);
+    for (let z = iz1 + 1.4; z < iz2; z += 2) box(ix2 - ix1, 0.14, 0.18, M.woodDark, (ix1 + ix2) / 2, h - 0.08, z);
+
+    // encimera corrida contra la pared este, con alacenas, fregadero y frascos
+    const cz1 = 4.4, cz2 = 9.6, cm = (cz1 + cz2) / 2, cx = ix2 - 0.3;
+    box(0.6, 0.86, cz2 - cz1, M.woodDark, cx, 0.43, cm);
+    box(0.66, 0.06, cz2 - cz1 + 0.04, M.stone, cx - 0.02, 0.89, cm);
+    for (let z = cz1 + 0.45; z < cz2; z += 0.9) {
+      box(0.02, 0.62, 0.78, M.woodMid, cx - 0.31, 0.45, z);
+      sph(0.025, M.brass, cx - 0.33, 0.62, z + 0.3);
+    }
+    box(0.46, 0.04, 0.8, M.steel, cx - 0.02, 0.93, 8.6);
+    const tap = cyl(0.015, 0.015, 0.3, M.steel, cx + 0.18, 1.08, 8.6);
+    tap.rotation.z = 0.5;
+    box(0.3, 0.04, cz2 - cz1, M.woodDark, ix2 - 0.15, 1.75, cm);
+    for (let z = cz1 + 0.2; z < cz2 - 0.1; z += 0.28 + Math.random() * 0.2) {
+      const jar = cyl(0.06, 0.06, 0.16 + Math.random() * 0.1, M.glass.clone(), ix2 - 0.15, 1.86, z);
+      jar.material.color.setHSL(Math.random() * 0.15, 0.4, 0.2);
+    }
+    OBSTACLES.push({ x1: cx - 0.34, x2: ix2, z1: cz1, z2: cz2 });
+
+    // estufa de hierro con su chimenea y brasas encendidas
+    const sx = ix2 - 0.42, sz = 10.4;
+    box(0.8, 0.85, 1.0, M.soot, sx, 0.43, sz);
+    box(0.84, 0.05, 1.04, M.metal, sx, 0.88, sz);
+    box(0.02, 0.22, 0.4, M.emberMat, sx - 0.41, 0.4, sz);
+    cyl(0.1, 0.1, h - 0.9, M.soot, sx + 0.2, 0.9 + (h - 0.9) / 2, sz);
+    cyl(0.16, 0.14, 0.12, M.copper, sx - 0.12, 0.96, sz - 0.25);
+    const ember = new THREE.PointLight(0xff6a2a, 1.0, 4.5, 2);
+    ember.position.set(sx - 0.6, 0.5, sz);
+    scene.add(ember);
+    flickers.push({ light: ember, base: 1.0, soft: true });
+    OBSTACLES.push({ x1: sx - 0.42, x2: ix2, z1: sz - 0.52, z2: sz + 0.52 });
+
+    // mesa de carnicero al centro: cuchilla, carne y sangre
+    const tx = 3.4, tz = 7.0;
+    box(1.0, 0.12, 2.2, M.woodMid, tx, 0.84, tz);
+    for (const ax of [-0.42, 0.42]) for (const az of [-0.98, 0.98]) box(0.1, 0.78, 0.1, M.woodDark, tx + ax, 0.39, tz + az);
+    box(0.84, 0.04, 2.0, M.woodDark, tx, 0.2, tz);
+    const meat = sph(0.2, M.meat, tx - 0.1, 1.0, tz + 0.4);
+    meat.scale.set(1.3, 0.6, 1);
+    const blade = box(0.02, 0.16, 0.26, M.steel, tx + 0.2, 1.0, tz - 0.3);
+    blade.rotation.x = 0.3;
+    box(0.03, 0.03, 0.14, M.woodDark, tx + 0.2, 1.06, tz - 0.48).rotation.x = 0.3;
+    decal(bloodCanvas(3), 0.9, 0.9, tx, 0.905, tz + 0.2, -Math.PI / 2, 0, 0.4);
+    decal(bloodCanvas(1), 1.4, 1.4, tx - 0.9, 0.014, tz + 0.4, -Math.PI / 2, 0, 1.2);
+    OBSTACLES.push({ x1: tx - 0.52, x2: tx + 0.52, z1: tz - 1.12, z2: tz + 1.12 });
+    // colgador de ollas sobre la mesa
+    box(0.05, 0.05, 1.8, M.metal, tx, 2.25, tz);
+    for (const dz of [-0.8, 0.8]) cyl(0.01, 0.01, h - 2.25, M.metal, tx, 2.25 + (h - 2.25) / 2, tz + dz);
+    for (let i = 0; i < 5; i++) {
+      const pz = tz - 0.7 + i * 0.35, r = 0.09 + (i % 3) * 0.03;
+      cyl(0.006, 0.006, 0.18, M.metal, tx, 2.14, pz);
+      cyl(r, r * 0.85, r * 1.2, M.copper, tx, 2.0 - r * 0.6, pz);
+    }
+    // foco desnudo que falla
+    cyl(0.006, 0.006, 0.45, M.metal, 2.4, h - 0.22, 8.4);
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), new THREE.MeshBasicMaterial({ color: 0xffe2a8 }));
+    bulb.position.set(2.4, h - 0.5, 8.4);
+    scene.add(bulb);
+    const bl = new THREE.PointLight(0xffd8a0, 1.0, 7, 2);
+    bl.position.set(2.4, h - 0.6, 8.4);
+    scene.add(bl);
+    flickers.push({ light: bl, bulb, base: 1.0, phase: 4.0 });
+
+    // despensa contra la pared del estudio
+    const px1 = 1.6, px2 = 3.7, pz = iz1 + 0.2;
+    for (const y of [0.3, 0.9, 1.5, 2.1]) box(px2 - px1, 0.04, 0.38, M.woodDark, (px1 + px2) / 2, y, pz);
+    for (const x of [px1, px2]) box(0.05, 2.2, 0.38, M.woodDark, x, 1.1, pz);
+    for (const y of [0.3, 0.9, 1.5]) for (let x = px1 + 0.15; x < px2 - 0.1; x += 0.22 + Math.random() * 0.15) {
+      const c = cyl(0.06, 0.06, 0.18, Math.random() < 0.5 ? M.copper : M.glass, x, y + 0.11, pz);
+      if (Math.random() < 0.15) { c.rotation.z = Math.PI / 2; c.position.y = y + 0.08; }
+    }
+    OBSTACLES.push({ x1: px1 - 0.05, x2: px2 + 0.05, z1: iz1, z2: iz1 + 0.42 });
+    // barril y costal junto a la pared del pasillo
+    cyl(0.28, 0.3, 0.8, M.woodDark, 1.68, 0.4, 4.7, null, 16);
+    const sack = sph(0.26, M.linen, 1.75, 0.2, 5.4);
+    sack.scale.set(1, 0.75, 1.1);
+    OBSTACLES.push({ x1: ix1, x2: 2.0, z1: 4.4, z2: 5.7 });
+
+    // ganchos con cadenas que cuelgan del techo
+    for (const [hx, hz] of [[4.4, 5.2], [4.7, 5.6], [2.2, 6.2]]) {
+      cyl(0.008, 0.008, 1.0, M.steel, hx, h - 0.5, hz);
+      const hook = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.01, 6, 12, Math.PI * 1.3), M.steel);
+      hook.position.set(hx, h - 1.05, hz);
+      scene.add(hook);
+    }
+    decal(writingCanvas("HAMBRE"), 1.4, 0.45, ix1 + 0.04, 1.9, 6.6, 0, Math.PI / 2);
+    const fill = new THREE.PointLight(0x8f9bcb, 0.6, 9, 2);
+    fill.position.set(3.4, 2.6, 5.0);
+    scene.add(fill);
+  }
 
   /* ============================================================
      COLISIONES (círculo del personaje vs. cajas XZ)
@@ -1481,6 +1798,8 @@ const Scene3D = (() => {
     buildCorridor();
     buildSpider();
     buildHall();
+    buildLibrary();
+    buildKitchen();
     buildCobwebs();
     buildDust();
     buildLights();
@@ -1495,29 +1814,44 @@ const Scene3D = (() => {
         { x1: -DOOR_HALF + 0.12, x2: DOOR_HALF - 0.12, z1: ROOM.d / 2 - 0.5, z2: ROOM.d / 2 + 0.5, h: 2.2 },
         { x1: CORR.x1 + 0.25, x2: CORR.x2 - 0.25, z1: CORR.z1 + 0.25, z2: CORR.z2 + 0.25, h: CORR.h - 0.2 },
         { x1: HALL.x1 + 0.25, x2: HALL.x2 - 0.25, z1: HALL.z1 + 0.25, z2: HALL.z2 - 0.25, h: HALL.h - 0.2 },
+        { x1: LIB.x1 + 0.3, x2: LIB.x2 - 0.3, z1: LIB.z1 + 0.3, z2: LIB.z2 - 0.3, h: LIB.h - 0.2 },
+        { x1: KIT.x1 + 0.3, x2: KIT.x2 - 0.3, z1: KIT.z1 + 0.3, z2: KIT.z2 - 0.3, h: KIT.h - 0.2 },
+        // los pasos entre cuartos, para que la cámara pueda cruzarlos detrás del personaje
+        { x1: LIB_DOOR.x1 + 0.12, x2: LIB_DOOR.x2 - 0.12, z1: ROOM.d / 2 - 0.5, z2: ROOM.d / 2 + 0.5, h: 2.1 },
+        { x1: CORR.x1 - 0.5, x2: CORR.x1 + 0.5, z1: LIB_SIDE.z1 + 0.12, z2: LIB_SIDE.z2 - 0.12, h: 2.1 },
+        { x1: CORR.x2 - 0.5, x2: CORR.x2 + 0.5, z1: KIT_SIDE.z1 + 0.12, z2: KIT_SIDE.z2 - 0.12, h: 2.1 },
+        { x1: KIT_HALL.x1 + 0.12, x2: KIT_HALL.x2 - 0.12, z1: HALL.z1 - 0.5, z2: HALL.z1 + 0.5, h: 2.1 },
       ],
       spawn: {
         survivor: { pos: V3(0.2, 0, 1.3), heading: Math.PI },
         monster: { pos: V3(0, 0, 9.0), heading: Math.PI },      // en el pasillo
       },
-      // ronda del monstruo: estudio → pasillo → gran salón → de regreso (tramos rectos sin muros)
+      // ronda del monstruo: estudio → pasillo → cocina → gran salón → pasillo →
+      // biblioteca → de regreso al estudio (si un tramo no es recto, rodea por el grafo)
       npcPath: [
-        [-0.5, 0.8], [2.6, -2.4], [2.6, 1.9], [0, 2.7], [0, 5.5], [0, 10.4],
+        [-0.5, 0.8], [2.6, -2.4], [2.6, 1.9], [0, 2.7], [0, 5.5], [0, 9.6],
+        [2.2, 9.6], [2.4, 5.2], [4.6, 5.0], [4.5, 8.8], [3.0, 10.6], [3.0, 12.2], [2.5, 13.5],
         [0, 13.0], [-1.2, 15.0], [0, 17.4], [2.4, 16.0], [0.8, 12.8], [0, 10.4],
-        [0, 5.5], [0, 2.7], [-2.8, 1.6],
+        [0, 9.2], [-2.0, 9.2], [-2.0, 10.8], [-4.5, 10.8], [-5.45, 10.5], [-5.45, 8.9], [-4.9, 8.6],
+        [-4.9, 4.6], [-2.4, 4.4], [-2.4, 2.6], [-2.8, 1.6],
       ].map(([x, z]) => V3(x, 0, z)),
-      npcStart: 13,
+      npcStart: 20,
       items: [
-        { kind: "relic", x: 3.1, z: -2.9 },                    // junto al librero
-        { kind: "relic", x: -0.6, z: 10.9 },                   // final del pasillo
+        { kind: "relic", x: -5.25, z: 10.85 },                 // biblioteca, rincón tras el librero
+        { kind: "relic", x: 5.0, z: 4.1 },                     // cocina, junto a la despensa
         { kind: "relic", x: -5.2, z: 20.6 },                   // rincón del salón, tras el comedor
         { kind: "battery", x: -3.0, z: 0.8 },
         { kind: "battery", x: -1.6, z: 13.4, skip: ["dark", "blackout"] },
         { kind: "battery", x: 3.6, z: 20.4, skip: ["blackout"] },
+        { kind: "battery", x: -2.0, z: 4.4, skip: ["blackout"] },
         { kind: "medkit", x: 0.6, z: 4.4, skip: ["blackout"] },
+        { kind: "medkit", x: 2.0, z: 10.8, skip: ["dark", "blackout"] },
         { kind: "holywater", x: 5.2, z: 20.6 },
       ],
-      exit: { x: -4.6, z: 12.15, r: 1.25, label: "la puerta principal", beaconY: 3.4 },
+      // más lugares donde reaparecen reliquias en Supervivencia
+      spots: [[3.1, -2.9], [-0.6, 10.9], [-4.9, 7.4], [-2.0, 6.2], [4.4, 7.4], [2.0, 8.0], [4.6, 18.2]]
+        .map(([x, z]) => ({ x, z })),
+      exit: { x: HALL.x1 + 0.6, z: MANSION_EXIT_Z, r: 1.25, label: "la puerta principal", beaconY: 3.4 },
       update: updateMansion,
     };
   }

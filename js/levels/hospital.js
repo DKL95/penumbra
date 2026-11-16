@@ -1,8 +1,8 @@
 /* =========================================================
    PENUMBRA — Escenario 2: HOSPITAL SAN JUDAS
    Hospital abandonado: recepción → pasillo principal con
-   sala de pacientes, farmacia, quirófano y morgue → elevador
-   de servicio (la salida, necesita 3 fusibles).
+   sala de pacientes, farmacia, rayos X, archivo, quirófano y
+   morgue → elevador de servicio (la salida, necesita 3 fusibles).
 
    Construido con figuras básicas (cajas, cilindros, esferas,
    toros, planos) y texturas procedurales en <canvas>:
@@ -189,27 +189,33 @@ export function buildHospital(k) {
   // recepción (x -6..6, z -6..0) · pasillo (x -1.5..1.5, z 0..24)
   // sala B (x -9..-1.5, z 3..11) · farmacia (x 1.5..8, z 3..9)
   // quirófano (x -8..-1.5, z 14..21) · morgue (x 1.5..9, z 13..22)
+  // archivo (x -8..-1.5, z 11..14) · rayos X (x 1.5..8, z 9..13)
   room(-6, 6, -6, 0);
   room(-1.5, 1.5, 0, 24);
   room(-9, -1.5, 3, 11);
   room(1.5, 8, 3, 9);
   room(-8, -1.5, 14, 21);
   room(1.5, 9, 13, 22);
+  room(-8, -1.5, 11, 14);
+  room(1.5, 8, 9, 13);
 
   wallX(-6, -6.15, 6.15);
   wallZ(-6, -6, 0);
   wallZ(6, -6, 0);
   wallX(0, -6.15, -1.5);
   wallX(0, 1.5, 6.15);
-  wallZ(-1.5, 0, 24, [[6.0, 7.4], [16.5, 17.9]]);
-  wallZ(1.5, 0, 24, [[5.0, 6.4], [17.0, 18.4]]);
+  wallZ(-1.5, 0, 24, [[6.0, 7.4], [11.8, 13.2], [16.5, 17.9]]);
+  wallZ(1.5, 0, 24, [[5.0, 6.4], [10.6, 12.0], [17.0, 18.4]]);
   wallX(24, -1.65, 1.65);
   // sala B
   wallZ(-9, 3, 11); wallX(3, -9.15, -1.5); wallX(11, -9.15, -1.5);
   // farmacia
-  wallZ(8, 3, 9); wallX(3, 1.5, 8.15); wallX(9, 1.5, 8.15);
+  wallZ(8, 3, 9); wallX(3, 1.5, 8.15); wallX(9, 1.5, 8.15, [[2.2, 3.4]]);
   // quirófano
-  wallZ(-8, 14, 21); wallX(14, -8.15, -1.5); wallX(21, -8.15, -1.5);
+  wallZ(-8, 14, 21); wallX(14, -8.15, -1.5, [[-4.0, -2.8]]); wallX(21, -8.15, -1.5);
+  // archivo y rayos X (sus otros muros son los de los cuartos vecinos)
+  wallZ(-8, 11, 14);
+  wallZ(8, 9, 13);
   // morgue
   wallZ(9, 13, 22); wallX(13, 1.5, 9.15); wallX(22, 1.5, 9.15);
 
@@ -271,7 +277,7 @@ export function buildHospital(k) {
      ============================================================ */
   // silla de ruedas abandonada
   const wc = new THREE.Group();
-  wc.position.set(1.0, 0, 11.5); wc.rotation.y = -0.5;
+  wc.position.set(0.9, 0, 14.6); wc.rotation.y = -0.5;
   scene.add(wc);
   box(0.45, 0.05, 0.45, mat.dark, 0, 0.5, 0, wc);
   box(0.45, 0.5, 0.05, mat.dark, 0, 0.78, -0.22, wc);
@@ -280,10 +286,10 @@ export function buildHospital(k) {
     w.position.set(sx, 0.3, 0); w.rotation.y = Math.PI / 2;
     wc.add(w);
   }
-  ob(0.65, 1.35, 11.1, 11.9);
+  ob(0.55, 1.25, 14.2, 15.0);
   // camilla junto a la pared
-  gurney(-1.0, 13.5, Math.PI / 2, false);
-  ob(-1.35, -0.65, 12.5, 14.5);
+  gurney(-1.0, 9.6, Math.PI / 2, false);
+  ob(-1.35, -0.65, 8.6, 10.6);
   // letrero de piso mojado
   const wf = new THREE.Group();
   wf.position.set(0.9, 0, 3.0);
@@ -507,6 +513,114 @@ export function buildHospital(k) {
   }
 
   /* ============================================================
+     ARCHIVO CLÍNICO (x -8..-1.5, z 11..14): entre la sala B y el
+     quirófano. Une el pasillo con el quirófano (circuito).
+     ============================================================ */
+  function cabinet(x, z, ry, drawersOpen = 0) {
+    const g = new THREE.Group();
+    g.position.set(x, 0, z); g.rotation.y = ry;
+    scene.add(g);
+    box(0.5, 1.35, 0.45, mat.steel, 0, 0.675, 0, g);
+    for (let i = 0; i < 4; i++) {
+      const out = i === drawersOpen - 1 ? 0.3 : 0;
+      box(0.44, 0.28, 0.04, mat.dark, 0, 0.2 + i * 0.32, 0.23 + out, g);
+      box(0.12, 0.02, 0.03, mat.chrome, 0, 0.28 + i * 0.32, 0.26 + out, g);
+      if (out) box(0.4, 0.22, 0.3, mat.white, 0, 0.2 + i * 0.32, 0.08 + out, g);   // carpetas asomando
+    }
+    return g;
+  }
+  // archiveros contra la pared oeste y la sur, y una fila exenta al centro
+  for (const z of [11.5, 12.05, 12.6, 13.15]) cabinet(-7.6, z, Math.PI / 2, z === 12.05 ? 2 : 0);
+  ob(-7.85, -7.3, 11.15, 13.45);
+  for (const x of [-6.9, -6.35, -5.8, -5.25]) cabinet(x, 11.4, 0, x === -5.8 ? 3 : 0);
+  ob(-7.15, -5.0, 11.15, 11.7);
+  for (const x of [-6.4, -5.85, -5.3]) { cabinet(x, 13.075, 0); cabinet(x, 12.625, Math.PI); }
+  ob(-6.7, -5.0, 12.4, 13.3);
+  // un archivero volcado bloquea a medias el rincón
+  const fallen = cabinet(-4.5, 13.45, 0);
+  fallen.rotation.x = -Math.PI / 2; fallen.position.y = 0.25; fallen.position.z = 13.1;
+  ob(-4.8, -4.2, 12.95, 13.85);
+  // escritorio con máquina de escribir junto al pasillo
+  box(0.9, 0.05, 0.6, mat.counter, -2.15, 0.76, 11.45);
+  for (const sx of [-0.4, 0.4]) box(0.05, 0.76, 0.55, mat.counter, -2.15 + sx, 0.38, 11.45);
+  box(0.36, 0.14, 0.28, mat.dark, -2.2, 0.85, 11.4);
+  box(0.3, 0.12, 0.02, mat.white, -2.2, 0.95, 11.3).rotation.x = -0.3;
+  ob(-2.65, -1.65, 11.15, 11.8);
+  // expedientes regados por el piso
+  for (let i = 0; i < 26; i++) {
+    const p = box(0.22, 0.006, 0.3, Math.random() < 0.3 ? mat.yellow : mat.white,
+      -7.0 + Math.random() * 5.0, 0.008, 11.8 + Math.random() * 1.9);
+    p.rotation.y = Math.random() * 3;
+  }
+  decal(writingCanvas("NO LOS DESPIERTES"), 2.8, 0.6, -4.6, 1.85, 11 + T + 0.01, 0, 0);
+  sign("ARCHIVO", -1.5 + T + 0.01, 2.62, 12.5, Math.PI / 2, 1.0);
+  fluoro(-4.2, 12.6, "x", 0xd8eadf, 0.9, "hard", 0.7);
+  fluoro(-6.8, 12.4, "z", 0xd8eadf, 0.5, "soft");
+
+  /* ============================================================
+     RAYOS X (x 1.5..8, z 9..13): entre la farmacia y la morgue.
+     Une el pasillo con la farmacia (circuito).
+     ============================================================ */
+  function xrayCanvas() {
+    const c = cvs(256), x = c.getContext("2d");
+    x.fillStyle = "#0b1418"; x.fillRect(0, 0, 256, 256);
+    x.strokeStyle = "rgba(220,240,255,.75)"; x.lineCap = "round";
+    x.lineWidth = 10; x.beginPath(); x.moveTo(128, 30); x.lineTo(128, 230); x.stroke();     // columna
+    x.lineWidth = 6;
+    for (let i = 0; i < 7; i++) {                                                         // costillas
+      const y = 60 + i * 22;
+      for (const s of [-1, 1]) { x.beginPath(); x.moveTo(128, y); x.quadraticCurveTo(128 + s * 95, y - 6, 128 + s * 80, y + 34); x.stroke(); }
+    }
+    x.lineWidth = 8;
+    for (const s of [-1, 1]) { x.beginPath(); x.moveTo(128 + s * 20, 46); x.lineTo(128 + s * 95, 40); x.stroke(); }   // clavículas
+    grain(x, 256, 256, 3000, 0.25);
+    return c;
+  }
+  const xrayMat = new THREE.MeshBasicMaterial({ map: tex(xrayCanvas(), 1, 1) });
+  // negatoscopios encendidos en la pared este
+  for (const z of [10.1, 11.0, 11.9]) {
+    box(0.06, 0.75, 0.8, mat.steel, 8 - T - 0.03, 1.65, z);
+    const film = new THREE.Mesh(new THREE.PlaneGeometry(0.66, 0.62), xrayMat);
+    film.position.set(8 - T - 0.07, 1.65, z); film.rotation.y = -Math.PI / 2;
+    scene.add(film);
+  }
+  const glow = new THREE.PointLight(0xbfe4ff, 0.8, 5, 2);
+  glow.position.set(7.0, 1.7, 11.0);
+  scene.add(glow);
+  k.addFlicker({ light: glow, base: 0.8, phase: 5.2 });
+  // mesa de rayos X con el brazo del tubo encima
+  box(2.0, 0.08, 0.8, mat.white, 4.8, 0.85, 11.0);
+  box(1.6, 0.8, 0.5, mat.steel, 4.8, 0.4, 11.0);
+  box(0.35, 2.6, 0.35, mat.steel, 4.8, 1.3, 12.55);
+  box(0.25, 0.2, 1.4, mat.steel, 4.8, 2.3, 11.85);
+  cyl(0.18, 0.22, 0.35, mat.dark, 4.8, 2.05, 11.2);
+  ob(3.8, 5.8, 10.6, 11.4);
+  ob(4.6, 5.0, 12.35, 12.85);
+  // consola de control detrás de un biombo de plomo
+  box(1.0, 0.9, 0.55, mat.counter, 7.25, 0.45, 9.5);
+  box(0.5, 0.35, 0.05, mat.dark, 7.25, 1.15, 9.4);
+  const scr = box(0.42, 0.28, 0.01, new THREE.MeshBasicMaterial({ color: 0x103a2a }), 7.25, 1.15, 9.43);
+  scr.castShadow = false;
+  box(0.06, 1.9, 1.1, mat.green, 6.55, 0.95, 9.7);
+  ob(6.5, 7.85, 9.15, 10.25);
+  // mandiles de plomo colgados junto a la puerta del pasillo
+  for (const z of [12.35, 12.65]) {
+    box(0.04, 0.9, 0.42, mat.dark, 1.5 + T + 0.04, 1.3, z);
+    box(0.06, 0.06, 0.06, mat.chrome, 1.5 + T + 0.03, 1.8, z);
+  }
+  // silla de ruedas volcada y una mancha
+  const wc2 = new THREE.Group();
+  wc2.position.set(7.3, 0.3, 12.4); wc2.rotation.set(0, 0.8, Math.PI / 2);
+  scene.add(wc2);
+  box(0.45, 0.05, 0.45, mat.dark, 0, 0, 0, wc2);
+  box(0.45, 0.5, 0.05, mat.dark, 0, 0.28, -0.22, wc2);
+  ob(6.95, 7.65, 12.05, 12.75);
+  decal(bloodCanvas(2), 1.1, 1.1, 3.6, 0.014, 9.9, -Math.PI / 2, 0, 0.8);
+  sign("RAYOS X", 1.5 - T - 0.01, 2.62, 11.3, -Math.PI / 2, 1.0);
+  sign("PELIGRO · RADIACIÓN", 4.8, 2.4, 13 - T - 0.01, Math.PI, 1.6);
+  fluoro(3.2, 10.4, "x", 0xe6f2ff, 0.8, "soft");
+
+  /* ============================================================
      ELEVADOR DE SERVICIO (SALIDA)
      ============================================================ */
   const ez = 24 - T - 0.02;
@@ -577,7 +691,13 @@ export function buildHospital(k) {
       { x1: 1.75, x2: 7.75, z1: 3.25, z2: 8.75, h: H - 0.2 },
       { x1: -7.75, x2: -1.75, z1: 14.25, z2: 20.75, h: H - 0.2 },
       { x1: 1.75, x2: 8.75, z1: 13.25, z2: 21.75, h: H - 0.2 },
+      { x1: -7.75, x2: -1.75, z1: 11.25, z2: 13.75, h: H - 0.2 },     // archivo
+      { x1: 1.75, x2: 7.75, z1: 9.25, z2: 12.75, h: H - 0.2 },        // rayos X
       // huecos de puerta
+      { x1: -2.0, x2: -1.0, z1: 11.92, z2: 13.08, h: 2.1 },
+      { x1: -3.88, x2: -2.92, z1: 13.5, z2: 14.5, h: 2.1 },
+      { x1: 1.0, x2: 2.0, z1: 10.72, z2: 11.88, h: 2.1 },
+      { x1: 2.32, x2: 3.28, z1: 8.5, z2: 9.5, h: 2.1 },
       { x1: -2.0, x2: -1.0, z1: 6.12, z2: 7.28, h: 2.1 },
       { x1: 1.0, x2: 2.0, z1: 5.12, z2: 6.28, h: 2.1 },
       { x1: -2.0, x2: -1.0, z1: 16.62, z2: 17.78, h: 2.1 },
@@ -589,10 +709,11 @@ export function buildHospital(k) {
     },
     npcPath: [
       [0, -2], [-4, -3], [4, -3], [0, -1], [0, 6.7], [-3, 6.7], [-7.5, 7], [-2.2, 6.75], [-0.4, 6.7],
-      [0, 5.7], [4.5, 5.7], [0, 5.7], [0, 17.2], [-3.5, 17.2], [-5, 15.6], [0, 17.7],
-      [5, 17.7], [0, 17.7], [0, 22.5], [0, 11],
+      [0, 5.7], [4.5, 5.7], [2.8, 6.4], [2.8, 8.4], [2.8, 9.9], [6.1, 10.0], [6.2, 11.95], [3.0, 11.95], [2.4, 11.3],
+      [0, 11.3], [0, 17.2], [-3.5, 17.2], [-5, 15.6], [-3.4, 15.0], [-3.4, 12.05], [-6.0, 12.05],
+      [-4.0, 12.05], [0, 12.5], [0, 17.7], [5, 17.7], [0, 17.7], [0, 22.5], [0, 11],
     ].map(([x, z]) => V(x, 0, z)),
-    npcStart: 17,
+    npcStart: 27,
     items: [
       { kind: "relic", x: -8.2, z: 7.3 },                      // fondo de la sala B
       { kind: "relic", x: -6.8, z: 15.2 },                     // quirófano
@@ -602,8 +723,11 @@ export function buildHospital(k) {
       { kind: "medkit", x: 2.6, z: 8.3 },
       { kind: "medkit", x: -2.3, z: 10.3, skip: ["dark", "blackout"] },
       { kind: "holywater", x: 4.6, z: -4.6 },
+      { kind: "battery", x: -6.95, z: 12.05, skip: ["blackout"] },   // archivo
+      { kind: "medkit", x: 2.3, z: 12.45, skip: ["blackout"] },      // rayos X
     ],
-    spots: [{ x: 0, z: 19.5 }, { x: -4.5, z: -1.5 }, { x: 6.0, z: 13.8 }, { x: -2.6, z: 20.2 }],
+    spots: [{ x: 0, z: 19.5 }, { x: -4.5, z: -1.5 }, { x: 6.0, z: 13.8 }, { x: -2.6, z: 20.2 },
+      { x: -3.4, z: 12.9 }, { x: 6.2, z: 11.6 }, { x: 2.6, z: 10.0 }],
     exit: { x: 0, z: 23.0, r: 1.3, label: "el elevador", beaconY: 2.75 },
     update,
   };

@@ -19,7 +19,7 @@ export function buildForest(k) {
   const { THREE, M, box, cyl, sph, wallBox, floorPlane, decal, tex, cvs, grain, writingCanvas, V } = k;
   const scene = k.scene;
   const ob = (x1, x2, z1, z2) => k.addObstacle({ x1, x2, z1, z2 });
-  const B = 20;          // medio lado del área jugable
+  const B = 24;          // medio lado del área jugable
 
   // generador pseudoaleatorio con semilla (mulberry32)
   let seed = 1337;
@@ -82,7 +82,7 @@ export function buildForest(k) {
   };
 
   /* ---------------- suelo y cielo ---------------- */
-  floorPlane(-30, 30, -30, 30, 0, mat.ground, 4);
+  floorPlane(-36, 36, -36, 36, 0, mat.ground, 4);
   const moon = new THREE.Mesh(new THREE.CircleGeometry(3.2, 32), new THREE.MeshBasicMaterial({ color: 0xe6e9dc, fog: false }));
   moon.position.set(-28, 30, 45);
   moon.lookAt(0, 0, 0);
@@ -254,20 +254,54 @@ export function buildForest(k) {
   const log2 = cyl(0.2, 0.22, 1.6, mat.bark, -1.9, 0.2, 0.2); log2.rotation.x = Math.PI / 2;
   ob(-2.1, -1.7, -0.6, 1.0);
 
-  // espantapájaros
-  cyl(0.04, 0.04, 2.3, mat.plank, 3, 1.15, -14, null, 6);
-  const arm = cyl(0.03, 0.03, 1.4, mat.plank, 3, 1.7, -14, null, 6); arm.rotation.z = Math.PI / 2;
-  box(0.45, 0.6, 0.25, mat.sack, 3, 1.45, -14);
-  sph(0.18, mat.sack, 3, 2.05, -14);
-  const hat = cyl(0.12, 0.24, 0.2, M.soot, 3, 2.25, -14); hat.rotation.z = 0.2;
-  ob(2.8, 3.2, -14.2, -13.8);
+  // espantapájaros (junto al inicio, que queda 4 m dentro de la cerca sur)
+  const S0 = -B + 4;
+  cyl(0.04, 0.04, 2.3, mat.plank, 3, 1.15, S0 + 2, null, 6);
+  const arm = cyl(0.03, 0.03, 1.4, mat.plank, 3, 1.7, S0 + 2, null, 6); arm.rotation.z = Math.PI / 2;
+  box(0.45, 0.6, 0.25, mat.sack, 3, 1.45, S0 + 2);
+  sph(0.18, mat.sack, 3, 2.05, S0 + 2);
+  const hat = cyl(0.12, 0.24, 0.2, M.soot, 3, 2.25, S0 + 2); hat.rotation.z = 0.2;
+  ob(2.8, 3.2, S0 + 1.8, S0 + 2.2);
   // letrero de madera junto al inicio
-  cyl(0.04, 0.04, 1.3, mat.plank, 1.8, 0.65, -14.6, null, 6);
-  box(1.0, 0.35, 0.04, mat.plank, 1.8, 1.25, -14.6);
+  cyl(0.04, 0.04, 1.3, mat.plank, 1.8, 0.65, S0 + 1.4, null, 6);
+  box(1.0, 0.35, 0.04, mat.plank, 1.8, 1.25, S0 + 1.4);
   const sgn = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.25), new THREE.MeshBasicMaterial({ map: writingCanvas("NO MIRES ATRÁS"), transparent: true }));
-  sgn.position.set(1.8, 1.25, -14.57);
+  sgn.position.set(1.8, 1.25, S0 + 1.43);
   scene.add(sgn);
-  ob(1.6, 2.0, -14.8, -14.4);
+  ob(1.6, 2.0, S0 + 1.2, S0 + 1.6);
+
+  /* ============================================================
+     CAMPAMENTO ABANDONADO (noreste): tienda rasgada, bolsa de
+     dormir, farol caído y una fogata apagada
+     ============================================================ */
+  const CX = 17.5, CZ = 13;
+  const tent = new THREE.Mesh(new THREE.ConeGeometry(1.6, 2.0, 4, 1, true), new THREE.MeshStandardMaterial({ color: 0x3b4a2e, roughness: 1, side: THREE.DoubleSide }));
+  tent.position.set(CX, 1.0, CZ); tent.rotation.y = Math.PI / 4 + 0.2;
+  tent.castShadow = tent.receiveShadow = true;
+  scene.add(tent);
+  ob(CX - 1.2, CX + 1.2, CZ - 1.2, CZ + 1.2);
+  const flap = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.3), new THREE.MeshStandardMaterial({ color: 0x2e3a24, roughness: 1, side: THREE.DoubleSide }));
+  flap.position.set(CX - 1.25, 0.6, CZ - 0.4); flap.rotation.set(-0.3, 1.1, 0.25);
+  scene.add(flap);
+  const bag = cyl(0.25, 0.25, 1.7, mat.sack, CX - 2.4, 0.15, CZ + 0.8);
+  bag.rotation.set(Math.PI / 2, 0, 0.5); bag.scale.set(1, 1, 0.5);
+  // fogata apagada: piedras en círculo y troncos quemados
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.16, 0), mat.stone);
+    st.position.set(CX - 1.0 + Math.cos(a) * 0.55, 0.08, CZ + 2.6 + Math.sin(a) * 0.55);
+    scene.add(st);
+  }
+  for (const r of [0.4, -0.5]) { const l = cyl(0.07, 0.08, 0.8, M.soot, CX - 1.0, 0.1, CZ + 2.6); l.rotation.set(Math.PI / 2, r, 0); }
+  ob(CX - 1.6, CX - 0.4, CZ + 2.0, CZ + 3.2);
+  // farol caído que todavía alumbra
+  const lamp = cyl(0.08, 0.1, 0.25, M.brass, CX - 1.6, 0.1, CZ - 1.6);
+  lamp.rotation.z = Math.PI / 2;
+  const lampL = new THREE.PointLight(0xffb060, 0.9, 6, 2);
+  lampL.position.set(CX - 1.6, 0.35, CZ - 1.6);
+  scene.add(lampL);
+  k.addFlicker({ light: lampL, base: 0.9, phase: 1.7 });
+  decal(k.bloodCanvas(2), 1.3, 1.3, CX - 1.0, 0.02, CZ - 2.4, -Math.PI / 2, 0, 0.6);
 
   /* ============================================================
      CERCA PERIMETRAL Y REJA DE SALIDA (norte)
@@ -300,8 +334,9 @@ export function buildForest(k) {
      ============================================================ */
   const PATH = [
     [0, -12], [0, -4], [4, -6], [6.5, -11], [10.5, -11], [6.5, -11], [4, 2], [4, 8],
+    [4, 14.6], [13.5, 14.6], [14.6, 10.4], [13.5, 14.6],
     [-4, 12.5], [-7.2, 12.5], [-13, 12.5], [-7.2, 12.5], [-4, 12.5], [0, 16], [-3, 6],
-    [-8, 0], [-8.2, -6.5], [-4, -9],
+    [-8, 0], [-8.2, -6.5], [-14, -4], [-16, -14], [-4, -9],
   ];
   const ITEMS = [
     { kind: "relic", x: 13.0, z: -13.0 },                       // dentro de la cabaña
@@ -313,7 +348,8 @@ export function buildForest(k) {
     { kind: "medkit", x: 6, z: 13, skip: ["dark", "blackout"] },
     { kind: "holywater", x: -8, z: 16.6 },
   ];
-  const SPOTS = [{ x: 14, z: 15 }, { x: -16, z: -14 }, { x: 15, z: -17 }, { x: -17, z: 3 }, { x: 5, z: 17 }, { x: 16, z: -3 }];
+  const SPOTS = [{ x: 14, z: 15 }, { x: -16, z: -14 }, { x: 15, z: -17 }, { x: -17, z: 3 }, { x: 5, z: 17 }, { x: 16, z: -3 },
+    { x: 14.5, z: 11.2 }, { x: -21, z: -6 }, { x: 20, z: -20 }, { x: -20, z: 21 }];
 
   function segDist(px, pz, ax, az, bx, bz) {
     const dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz;
@@ -325,16 +361,16 @@ export function buildForest(k) {
       const a = PATH[i], b = PATH[(i + 1) % PATH.length];
       if (segDist(x, z, a[0], a[1], b[0], b[1]) < 2.0) return false;
     }
-    const rects = [[6.5, 15.5, -15.5, -6.5], [-17, -5, 7, 19], [6.2, 13.8, 6.2, 13.8]];
+    const rects = [[6.5, 15.5, -15.5, -6.5], [-17, -5, 7, 19], [6.2, 13.8, 6.2, 13.8], [13, 20.5, 9, 16]];
     for (const [x1, x2, z1, z2] of rects) if (x > x1 && x < x2 && z > z1 && z < z2) return false;
-    const circles = [[0, 0, 4.5], [-10, -8, 2.6], [0, -16, 3.5], [0, 19, 3.5], [3, -14, 1.5], [1.8, -14.6, 1.5]];
+    const circles = [[0, 0, 4.5], [-10, -8, 2.6], [0, -B + 4, 3.5], [0, B - 1, 3.5], [3, -B + 6, 1.5], [1.8, -B + 5.4, 1.5]];
     for (const [cx, cz, r] of circles) if (Math.hypot(x - cx, z - cz) < r) return false;
     for (const it of ITEMS.concat(SPOTS)) if (Math.hypot(x - it.x, z - it.z) < 1.6) return false;
     return true;
   }
 
   const trees = [];
-  for (let tries = 0; trees.length < 90 && tries < 4000; tries++) {
+  for (let tries = 0; trees.length < 130 && tries < 6000; tries++) {
     const x = rr(-B + 0.8, B - 0.8), z = rr(-B + 0.8, B - 0.8);
     if (!freeSpot(x, z)) continue;
     if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 1.6)) continue;
@@ -386,7 +422,7 @@ export function buildForest(k) {
   inst(branchGeo, mat.bark, branchM);
   inst(coneGeo, mat.pine, coneM);
   // rocas sueltas
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 60; i++) {
     const x = rr(-B, B), z = rr(-B, B);
     if (!freeSpot(x, z)) continue;
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rr(0.1, 0.3), 0), mat.stone);
@@ -403,7 +439,7 @@ export function buildForest(k) {
   moonLight.target.position.set(0, 0, 0);
   moonLight.castShadow = true;
   moonLight.shadow.mapSize.set(2048, 2048);
-  Object.assign(moonLight.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 70 });
+  Object.assign(moonLight.shadow.camera, { left: -B - 4, right: B + 4, top: B + 4, bottom: -B - 4, near: 1, far: 80 });
   moonLight.shadow.bias = -0.0008;
   scene.add(moonLight, moonLight.target);
 
@@ -478,14 +514,14 @@ export function buildForest(k) {
       { x1: 14.4, x2: B - 0.25, z1: -14.4, z2: -7.6, h: 25 },
     ],
     spawn: {
-      survivor: { pos: V(0, 0, -16), heading: 0 },
+      survivor: { pos: V(0, 0, -B + 4), heading: 0 },
       monster: { pos: V(-11, 0, 12.5), heading: Math.PI / 2 },    // en el cementerio
     },
     npcPath: PATH.map(([x, z]) => V(x, 0, z)),
-    npcStart: 11,
+    npcStart: 15,
     items: ITEMS,
     spots: SPOTS,
-    exit: { x: 0, z: 19.0, r: 1.5, label: "la reja del bosque", beaconY: 3.4 },
+    exit: { x: 0, z: B - 1, r: 1.5, label: "la reja del bosque", beaconY: 3.4 },
     update,
   };
 }
