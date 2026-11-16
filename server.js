@@ -134,7 +134,8 @@ const server = http.createServer((req, res) => {
 
 /* ---------------- WebSocket: salas ---------------- */
 const wss = new WebSocketServer({ server });
-const rooms = new Map();          // code -> { players: Map<id, ws> }
+const rooms = new Map();          // code -> { players: Map<id, ws>, settings, host, started }
+const MAX_PLAYERS = 4;            // 1 monstruo + hasta 3 supervivientes
 let nextId = 1;
 
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -169,6 +170,11 @@ function leaveRoom(ws) {
   room.players.delete(ws.id);
   broadcast(room, { t: "peer-leave", id: ws.id, role: ws.role });
   if (room.players.size === 0) rooms.delete(ws.room);
+  else if (room.host === ws.id) {
+    // el anfitrión se fue: la sala pasa al jugador más antiguo
+    room.host = room.players.keys().next().value;
+    broadcast(room, { t: "host", id: room.host });
+  }
   log(`[${ws.room}] sale jugador ${ws.id} (${ws.role}) · quedan ${room.players.size}`);
   ws.room = null;
 }
@@ -189,11 +195,11 @@ wss.on("connection", (ws, req) => {
         if (ws.room) leaveRoom(ws);
         const code = newCode();
         const settings = roomSettings(msg.settings);
-        rooms.set(code, { players: new Map([[ws.id, ws]]), settings });
+        rooms.set(code, { players: new Map([[ws.id, ws]]), settings, host: ws.id, started: false });
         ws.room = code;
         ws.role = "survivor";
         ws.name = String(msg.name || ws.name).slice(0, 16);
-        send(ws, { t: "created", code, id: ws.id, role: ws.role, settings });
+        send(ws, { t: "created", code, id: ws.id, role: ws.role, settings, host: ws.id });
         log(`[${code}] sala creada por ${ws.id}`);
         break;
       }
@@ -202,12 +208,13 @@ wss.on("connection", (ws, req) => {
         const room = rooms.get(code);
         if (!room) return send(ws, { t: "error", msg: `No existe la partida ${code}.` });
         if (ws.room === code) return send(ws, { t: "error", msg: "Ya estás en esta partida." });
-        if (room.players.size >= 2) return send(ws, { t: "error", msg: "La partida ya está llena." });
+        if (room.started) return send(ws, { t: "error", msg: `La partida ${code} ya empezó.` });
+        if (room.players.size >= MAX_PLAYERS) return send(ws, { t: "error", msg: "La partida ya está llena." });
         if (ws.room) leaveRoom(ws);
 
-        // el rol libre: normalmente "monster"
+        // un solo monstruo por sala: si aún no hay, lo es quien entra; si ya hay, superviviente
         const taken = [...room.players.values()].map((p) => p.role);
-        ws.role = taken.includes("survivor") ? "monster" : "survivor";
+        ws.role = taken.includes("monster") ? "survivor" : "monster";
         ws.room = code;
         ws.name = String(msg.name || ws.name).slice(0, 16);
         room.players.set(ws.id, ws);
@@ -215,9 +222,23 @@ wss.on("connection", (ws, req) => {
         const peers = [...room.players.values()]
           .filter((p) => p.id !== ws.id)
           .map((p) => ({ id: p.id, role: p.role, name: p.name }));
-        send(ws, { t: "joined", code, id: ws.id, role: ws.role, peers, settings: room.settings });
+        send(ws, { t: "joined", code, id: ws.id, role: ws.role, peers, settings: room.settings, host: room.host });
         broadcast(room, { t: "peer-join", id: ws.id, role: ws.role, name: ws.name }, ws.id);
         log(`[${code}] entra ${ws.id} como ${ws.role}`);
+        break;
+      }
+      case "start": {
+        // solo el anfitrión, con al menos un superviviente y el monstruo
+        const room = rooms.get(ws.room);
+        if (!room || room.started) return;
+        if (room.host !== ws.id) return send(ws, { t: "error", msg: "Solo el anfitrión puede comenzar." });
+        const roles = [...room.players.values()].map((p) => p.role);
+        if (!roles.includes("monster") || !roles.includes("survivor"))
+          return send(ws, { t: "error", msg: "Hace falta el monstruo y al menos un superviviente." });
+        room.started = true;
+        const players = [...room.players.values()].map((p) => ({ id: p.id, role: p.role, name: p.name }));
+        broadcast(room, { t: "start", players });
+        log(`[${ws.room}] comienza con ${players.length} jugadores`);
         break;
       }
       case "state": {

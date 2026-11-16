@@ -2028,7 +2028,7 @@ const Scene3D = (() => {
     relics: 0, totalRelics: 0, levelsCleared: 0,
     time: 0, over: false, transition: 0, invuln: 0, attackCd: 0, stunned: 0,
     items: [], exitOpen: false, boost: 1, spawnCount: 0,
-    foe: { hp: 3, maxHp: 3, relics: 0 },   // lo que el monstruo-jugador sabe del superviviente
+    versus: null,                          // resumen del monstruo-jugador al terminar (atrapados / escaparon)
   };
   const NEED = Rules.RELICS_PER_LEVEL;
 
@@ -2039,8 +2039,14 @@ const Scene3D = (() => {
     heading: 0, speed: 0, stepAcc: 0,
   };
   let flashlight = null, flashOn = true, battery = 1;
-  // personaje remoto (otro jugador) o NPC (modo un jugador)
+  // monstruo de la computadora (modo un jugador)
   let other = null;
+  // multijugador: los demás jugadores de la sala (id → actor). Salas de hasta
+  // 4: un monstruo y hasta 3 supervivientes. Un actor con `out` ya no juega
+  // ("escaped", "caught" o "left") y no se dibuja.
+  const peers = new Map();
+  const activePeers = (role) => [...peers.values()].filter((a) => !a.out && (!role || a.role === role));
+  const teamRelics = () => G.items.filter((i) => i.kind === "relic" && i.taken).length;
 
   // cámara orbital
   const cam = { yaw: Math.PI, pitch: -0.22, dist: 2.5, shake: 0 };
@@ -2108,6 +2114,8 @@ const Scene3D = (() => {
   function clearMatch() {
     if (player.char) { player.char.dispose(); player.char = null; }
     if (other) { other.char.dispose(); other = null; }
+    for (const a of peers.values()) a.char.dispose();
+    peers.clear();
     for (const it of G.items) it.mesh.removeFromParent();
     G.items = [];
     flashlight = null;
@@ -2128,7 +2136,7 @@ const Scene3D = (() => {
     G.time = 0;
     G.over = false;
     G.boost = 1;
-    G.foe = { hp: G.diff.hp, maxHp: G.diff.hp, relics: 0 };
+    G.versus = null;
     battery = G.diffId === "blackout" ? 0.7 : 1;
     flashOn = true;
     startLevel();
@@ -2164,7 +2172,7 @@ const Scene3D = (() => {
     player.role = config.role;
     player.char = spawnCharacter(player.role);
     const sp = LV.spawn[player.role];
-    player.pos.copy(sp.pos);
+    player.pos.copy(sp.pos).add(spawnOffset(player.role, window.Net ? Net.info.id : 0));
     player.heading = sp.heading;
     player.vel.set(0, 0, 0);
     player.speed = 0;
@@ -2181,12 +2189,67 @@ const Scene3D = (() => {
     if (config.mode === "solo") {
       // monstruo controlado por la computadora (ronda + acecho)
       addOther("monster", true);
-    } else {
-      // el otro jugador aparece cuando llegue su primer estado
-      const peer = window.Net && Net.info.peers[0];
-      if (peer) addOther(peer.role, false);
+    } else if (window.Net) {
+      // los demás jugadores de la sala (la lista llegó con el mensaje "start")
+      for (const p of Net.info.peers) addPeer(p);
     }
     refreshHud();
+  }
+
+  // los supervivientes salen uno junto a otro (orden por id, igual en todos los equipos)
+  function spawnOffset(role, id) {
+    if (config.mode !== "mp" || role !== "survivor" || !window.Net) return V3(0, 0, 0);
+    const ids = Net.info.peers.filter((p) => p.role === "survivor").map((p) => p.id);
+    if (Net.info.role === "survivor") ids.push(Net.info.id);
+    ids.sort((a, b) => a - b);
+    return V3([0, 0.9, -0.9][Math.max(0, ids.indexOf(id))] || 0, 0, 0);
+  }
+
+  // otro jugador de la sala
+  function addPeer(p) {
+    if (peers.has(p.id)) peers.get(p.id).char.dispose();
+    const ch = spawnCharacter(p.role);
+    const s = LV.spawn[p.role];
+    const pos = s.pos.clone().add(spawnOffset(p.role, p.id));
+    const a = {
+      id: p.id, name: p.name || "Jugador", role: p.role, npc: false, char: ch,
+      pos, target: pos.clone(), heading: s.heading, targetHeading: s.heading,
+      speed: 0, flash: null, stepAcc: 0, hp: G.diff.hp, maxHp: G.diff.hp, out: null,
+    };
+    if (p.role === "survivor") {
+      a.flash = makeFlashlight(ch.root, false);
+      // los supervivientes ven el nombre de sus compañeros (el monstruo no)
+      if (player.role === "survivor") ch.root.add(nameTag(a.name));
+    }
+    ch.root.position.copy(pos);
+    ch.root.rotation.y = a.heading;
+    peers.set(p.id, a);
+    return a;
+  }
+
+  function nameTag(text) {
+    const c = document.createElement("canvas");
+    c.width = 256; c.height = 64;
+    const x = c.getContext("2d");
+    x.font = "600 30px Georgia, serif";
+    const w = Math.min(244, x.measureText(text).width + 28);
+    x.fillStyle = "rgba(6,10,8,.6)";
+    x.fillRect(128 - w / 2, 12, w, 40);
+    x.fillStyle = "#cfe8d8"; x.textAlign = "center"; x.textBaseline = "middle";
+    x.fillText(text.slice(0, 16), 128, 33);
+    const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false }));
+    tag.scale.set(0.8, 0.2, 1);
+    tag.position.y = 2.05;
+    return tag;
+  }
+
+  function nearestSurvivor(range) {
+    let best = null, bd = range;
+    for (const a of activePeers("survivor")) {
+      const d = a.pos.distanceTo(player.pos);
+      if (d < bd) { bd = d; best = a; }
+    }
+    return best;
   }
 
   function addOther(role, npc) {
@@ -2209,6 +2272,8 @@ const Scene3D = (() => {
 
   function removeOther() {
     if (other) { other.char.dispose(); other = null; }
+    for (const a of peers.values()) a.char.dispose();
+    peers.clear();
   }
 
   function spawnItems() {
@@ -2259,13 +2324,17 @@ const Scene3D = (() => {
   function objectiveText() {
     const sc = Rules.SCENARIOS[G.scenario];
     if (player.role === "monster") {
-      return G.foe.relics >= NEED
-        ? "¡Tiene las 3 reliquias! Vigila la salida."
-        : `Caza al superviviente (lleva ${G.foe.relics}/${NEED} ${sc.relics}).`;
+      const alive = activePeers("survivor").length;
+      const who = alive === 1 ? "queda 1" : `quedan ${alive}`;
+      return G.relics >= NEED
+        ? `¡Tienen las ${NEED} ${sc.relics}! Vigila ${LV.exit.label} (${who}).`
+        : `Caza a los supervivientes (${who}) · llevan ${G.relics}/${NEED} ${sc.relics}.`;
     }
     if (G.game === "survival") return `Junta ${sc.relics}. El monstruo se vuelve más rápido con cada reliquia.`;
     if (G.exitOpen) return `Escapa por ${LV.exit.label}.`;
-    return `Encuentra ${NEED} ${sc.relics} (${G.relics}/${NEED}).`;
+    const team = G.game === "versus" && activePeers("survivor").length > 0;
+    return team ? `Encuentren ${NEED} ${sc.relics} entre todos (${G.relics}/${NEED}).`
+                : `Encuentra ${NEED} ${sc.relics} (${G.relics}/${NEED}).`;
   }
 
   function hearts(hp, max) {
@@ -2277,10 +2346,11 @@ const Scene3D = (() => {
   function updateLiveHud(force) {
     const surv = player.role === "survivor";
     setHud("objective-text", objectiveText());
-    setHtml("hud-hp", surv ? hearts(G.hp, G.maxHp) : hearts(G.foe.hp, G.foe.maxHp));
-    setHud("hud-hp-label", surv ? "Vida" : "Superviviente");
+    const prey = [...peers.values()].filter((a) => a.role === "survivor");
+    setHtml("hud-hp", surv ? hearts(G.hp, G.maxHp) : hearts(prey.filter((a) => !a.out).length, Math.max(1, prey.length)));
+    setHud("hud-hp-label", surv ? "Vida" : "Supervivientes");
     const sc = Rules.SCENARIOS[G.scenario];
-    const relics = surv ? G.relics : G.foe.relics;
+    const relics = G.relics;
     setHud("hud-relics", G.game === "survival"
       ? `${sc.short}: ${G.totalRelics}`
       : `${sc.short}: ${relics}/${NEED}`);
@@ -2305,10 +2375,8 @@ const Scene3D = (() => {
   function updateNetHud() {
     if (config.mode === "solo") return setHud("hud-net", G.game === "survival" ? "Supervivencia" : "Escape");
     if (!window.Net || !Net.inRoom) return setHud("hud-net", "Sin conexión");
-    const peer = Net.info.peers[0];
-    const who = peer ? (peer.role === "monster" ? "monstruo conectado" : "superviviente conectado")
-                     : "esperando rival…";
-    setHud("hud-net", `Sala ${Net.info.code} · ${who} · ${Net.info.ping} ms`);
+    const n = 1 + activePeers().length;
+    setHud("hud-net", `Sala ${Net.info.code} · ${n} ${n === 1 ? "jugador" : "jugadores"} · ${Net.info.ping} ms`);
   }
 
   function updatePrompt() {
@@ -2325,7 +2393,7 @@ const Scene3D = (() => {
                             : `<kbd>E</kbd> Cerrada — faltan ${NEED - G.relics} ${Rules.SCENARIOS[G.scenario].relics}`;
           verb = G.exitOpen ? "Escapar" : "Cerrada"; ready = G.exitOpen;
         }
-      } else if (other && !other.npc && player.pos.distanceTo(other.pos) < Rules.ATTACK_RANGE + 0.4) {
+      } else if (config.mode === "mp" && nearestSurvivor(Rules.ATTACK_RANGE + 0.4)) {
         html = `<kbd>E</kbd> Atacar`;
         verb = "Atacar"; ready = true;
       }
@@ -2443,8 +2511,9 @@ const Scene3D = (() => {
   function pickItem(it) {
     const sc = Rules.SCENARIOS[G.scenario];
     if (it.kind === "relic") {
-      G.relics++;
       G.totalRelics++;
+      // en multijugador las reliquias son del equipo: cuenta las que ya recogió cualquiera
+      if (G.game === "versus") { it.taken = true; G.relics = teamRelics(); } else G.relics++;
       Sound.pickup(true);
       if (G.game === "survival") {
         G.boost += 0.06;
@@ -2453,7 +2522,8 @@ const Scene3D = (() => {
       } else if (G.relics >= NEED) {
         G.exitOpen = true;
         updateExitBeacon();
-        toast(`¡Tienes los ${NEED}! Escapa por ${LV.exit.label}.`, 4500);
+        toast(G.game === "versus" && activePeers("survivor").length
+          ? `¡Ya tienen los ${NEED}! Escapa por ${LV.exit.label}.` : `¡Tienes los ${NEED}! Escapa por ${LV.exit.label}.`, 4500);
       } else {
         toast(`${sc.relic} ${G.relics}/${NEED}`);
       }
@@ -2466,7 +2536,7 @@ const Scene3D = (() => {
     it.taken = true;
     it.mesh.visible = false;
     if (G.game === "survival" && it.kind !== "relic") it.respawn = 60;
-    if (config.mode === "mp" && window.Net) Net.sendEvent("pick", { id: it.id, relics: G.relics });
+    if (config.mode === "mp" && window.Net) Net.sendEvent("pick", { id: it.id, kind: it.kind });
     updateLiveHud();
   }
 
@@ -2574,8 +2644,9 @@ const Scene3D = (() => {
     cam.shake = 0.35;
     // embestida corta hacia donde mira
     player.vel.add(V3(Math.sin(player.heading) * 4, 0, Math.cos(player.heading) * 4));
-    if (other && other.pos.distanceTo(player.pos) < Rules.ATTACK_RANGE + 0.4 && !wallBetween(player.pos, other.pos)) {
-      Net.sendEvent("hit", { x: player.pos.x, z: player.pos.z });
+    const target = nearestSurvivor(Rules.ATTACK_RANGE + 0.4);
+    if (target && !wallBetween(player.pos, target.pos)) {
+      Net.sendEvent("hit", { x: player.pos.x, z: player.pos.z, target: target.id });
     }
   }
 
@@ -2613,15 +2684,20 @@ const Scene3D = (() => {
       scenarioLabel: campaign ? "Campaña (3 escenarios)" : Rules.SCENARIOS[G.scenario].label,
       reached: Rules.SCENARIOS[G.scenario].label,
       seconds: Math.round(G.time),
-      relics: surv ? G.totalRelics : G.foe.relics,
+      relics: surv ? G.totalRelics : G.relics,
       levels: G.levelsCleared,
       levelsPlayed: campaign ? Rules.CAMPAIGN.length : 1,
       hp: Math.max(0, G.hp),
       escaped: result === "escaped",
       won: result === "escaped" || result === "won",
     };
+    if (config.mode === "mp" && !surv && G.versus) {
+      const v = G.versus;
+      stats.detail = `Atrapaste a ${v.caught} de ${v.total} ${v.total === 1 ? "superviviente" : "supervivientes"}.`;
+    }
     stats.points = result === "abandon" ? 0 : Rules.score(stats);
-    if (config.mode === "mp" && surv && !remote && window.Net) Net.sendEvent("end", { result });
+    // avisar a la sala: este superviviente ya salió (o cayó); la partida sigue para los demás
+    if (config.mode === "mp" && surv && !remote && result !== "abandon" && window.Net) Net.sendEvent("out", { result });
     if (window.Sound) {
       Sound.stopMusic();
       Sound.setTension(0);
@@ -2636,89 +2712,128 @@ const Scene3D = (() => {
     }, result === "caught" ? 1700 : 900);
   }
 
+  // el monstruo-jugador: ¿ya terminaron todos los supervivientes?
+  function checkVersusEnd() {
+    if (config.mode !== "mp" || player.role !== "monster" || G.over) return;
+    const prey = [...peers.values()].filter((a) => a.role === "survivor");
+    if (prey.some((a) => !a.out)) return;
+    const caught = prey.filter((a) => a.out === "caught").length;
+    const escaped = prey.filter((a) => a.out === "escaped").length;
+    G.versus = { caught, escaped, total: caught + escaped };
+    if (!caught && !escaped) return endMatch("abandon");
+    endMatch(caught >= Math.ceil((caught + escaped) / 2) ? "won" : "lost");
+  }
+
   /* ---------------- Red ---------------- */
   function onNetEvent(msg) {
     const d = msg.d || {};
+    const a = peers.get(msg.id);
     switch (msg.e) {
       case "flash":
-        if (other && other.flash) other.flash.visible = !!msg.d;
+        if (a && a.flash) a.flash.visible = !!msg.d && !a.out;
         break;
       case "roar": {
-        if (!other) break;
-        const dist = other.pos.distanceTo(player.pos);
+        if (!a) break;
+        const dist = a.pos.distanceTo(player.pos);
         Sound.roar(clamp(1.4 - dist / 8, 0.3, 1));
         cam.shake = Math.max(cam.shake, clamp(0.7 - dist / 10, 0.15, 0.7));
         toast(player.role === "survivor" ? "Algo ruge muy cerca…" : "El monstruo ruge");
         break;
       }
-      case "pick": {            // el superviviente recogió algo
+      case "pick": {            // un superviviente recogió algo: desaparece para todos
         const it = G.items.find((i) => i.id === d.id);
-        if (it) { it.taken = true; it.mesh.visible = false; }
-        if (typeof d.relics === "number") {
-          G.foe.relics = d.relics;
-          if (d.relics >= NEED && !G.exitOpen) {
-            G.exitOpen = true;
-            updateExitBeacon();
-            toast("¡El superviviente tiene las reliquias! Va hacia la salida.", 4500);
-            Sound.denied();
-          }
+        if (!it || it.taken) break;
+        it.taken = true; it.mesh.visible = false;
+        if (it.kind !== "relic") break;
+        G.relics = teamRelics();
+        const sc = Rules.SCENARIOS[G.scenario];
+        if (G.relics >= NEED && !G.exitOpen) {
+          G.exitOpen = true;
+          updateExitBeacon();
+          if (player.role === "monster") { toast(`¡Tienen las ${NEED} ${sc.relics}! Vigila ${LV.exit.label}.`, 4500); Sound.denied(); }
+          else { toast(`¡${a ? a.name : "Tu equipo"} encontró la última! Escapa por ${LV.exit.label}.`, 4500); Sound.unlock(); }
+        } else if (player.role === "survivor") {
+          toast(`${a ? a.name : "Tu equipo"} encontró ${sc.relic.toLowerCase()} (${G.relics}/${NEED}).`);
         }
+        updateLiveHud();
         break;
       }
       case "hp":
-        G.foe.hp = d.hp; G.foe.maxHp = d.max;
-        if (player.role === "monster") toast(`¡Golpe! Al superviviente le quedan ${d.hp} vidas.`);
+        if (!a) break;
+        if (player.role === "monster" && d.hp < a.hp && d.hp > 0)
+          toast(`¡Golpe! A ${a.name} ${d.hp === 1 ? "le queda 1 vida" : `le quedan ${d.hp} vidas`}.`);
+        a.hp = d.hp; a.maxHp = d.max;
         break;
       case "hit":
-        if (player.role === "survivor") hurtPlayer(V3(d.x || 0, 0, d.z || 0));
+        // solo el superviviente al que apuntó el golpe
+        if (player.role === "survivor" && (d.target == null || d.target === Net.info.id)) hurtPlayer(V3(d.x || 0, 0, d.z || 0));
         break;
       case "holy":
-        if (player.role === "monster") {
-          holyBurst(V3(d.x, 0, d.z));
-          if (Math.hypot(player.pos.x - d.x, player.pos.z - d.z) < Rules.STUN_RADIUS) {
-            G.stunned = Rules.STUN_TIME;
-            Sound.stun();
-            toast("¡Agua bendita! Quedaste paralizado.", 3000);
-          }
+        holyBurst(V3(d.x, 0, d.z));
+        if (player.role === "monster" && Math.hypot(player.pos.x - d.x, player.pos.z - d.z) < Rules.STUN_RADIUS) {
+          G.stunned = Rules.STUN_TIME;
+          Sound.stun();
+          toast("¡Agua bendita! Quedaste paralizado.", 3000);
         }
         break;
-      case "end":
-        if (player.role === "monster") endMatch(d.result === "escaped" ? "lost" : "won", true);
+      case "out":             // un superviviente escapó o cayó
+        if (!a || a.out) break;
+        a.out = d.result === "escaped" ? "escaped" : "caught";
+        a.char.root.visible = false;
+        toast(a.out === "escaped" ? `${a.name} escapó.` : `${a.name} cayó en la penumbra.`, 3500);
+        if (player.role === "monster" && a.out === "caught") Sound.growl(0.6);
+        updateLiveHud();
+        updateNetHud();
+        checkVersusEnd();
         break;
     }
   }
   function onNetState(msg) {
     if (config.mode !== "mp") return;
-    // si los modelos aún cargan, setupMatch() agregará al rival al terminar
+    // si los modelos aún cargan, setupMatch() agregará a los demás al terminar
     if (!modelsReady || !LV || !player.char) return;
-    if (!other) {
-      const peer = Net.info.peers.find((p) => p.id === msg.id);
-      addOther(peer ? peer.role : (player.role === "survivor" ? "monster" : "survivor"), false);
-      other.pos.fromArray(msg.p);
-      other.heading = msg.r;
+    let a = peers.get(msg.id);
+    if (!a) {
+      const p = Net.info.peers.find((q) => q.id === msg.id);
+      if (!p) return;
+      a = addPeer(p);
+      a.pos.fromArray(msg.p);
+      a.heading = msg.r;
     }
-    other.target.fromArray(msg.p);
-    other.targetHeading = msg.r;
-    other.speed = msg.a;
+    if (a.out) return;
+    a.target.fromArray(msg.p);
+    a.targetHeading = msg.r;
+    a.speed = msg.a;
   }
   function onPeerJoin(msg) {
-    if (config.mode !== "mp") return;
-    toast(msg.role === "monster" ? "El monstruo entró al escenario." : "Un superviviente entró al escenario.");
-    if (modelsReady && player.char) addOther(msg.role, false);
+    if (config.mode !== "mp" || !running) return;
+    if (modelsReady && player.char && !peers.has(msg.id)) addPeer(msg);
     updateNetHud();
   }
   function onPeerLeave(msg) {
     if (config.mode !== "mp") return;
-    toast(msg.role === "monster" ? "El monstruo abandonó la partida." : "El superviviente abandonó la partida.", 4500);
-    removeOther();
+    const a = peers.get(msg.id);
+    if (a) a.char.root.visible = false;
+    if (!running || !player.char || G.over) { updateNetHud(); return; }
+    if (msg.role === "monster") {
+      toast("El monstruo abandonó la partida.", 4500);
+      updateNetHud();
+      return endMatch("abandon");
+    }
+    if (a && !a.out) {
+      a.out = "left";
+      toast(`${a.name} abandonó la partida.`, 4000);
+    }
     updateNetHud();
-    if (running && player.char && !G.over) endMatch("abandon");
+    updateLiveHud();
+    checkVersusEnd();
   }
   function onNetClose(info) {
     if (config.mode !== "mp" || !info.wasInRoom) return;
     toast("Se perdió la conexión con el servidor.", 6000);
     removeOther();
     updateNetHud();
+    if (running && player.char && !G.over) endMatch("abandon");
   }
   let netBound = false;
   function bindNet() {
@@ -2772,8 +2887,9 @@ const Scene3D = (() => {
     player.vel.lerp(_wish, 1 - Math.exp(-10 * dt));
     player.pos.addScaledVector(player.vel, dt);
     collide(player.pos);
-    if (other) {
-      separate(player.pos, other.pos);
+    const near = config.mode === "mp" ? activePeers() : (other ? [other] : []);
+    for (const a of near) {
+      separate(player.pos, a.pos);
       collide(player.pos);
     }
     player.speed = Math.hypot(player.vel.x, player.vel.z);
@@ -2809,24 +2925,32 @@ const Scene3D = (() => {
   }
 
   function updateOther(dt) {
+    if (config.mode === "mp") {
+      for (const a of peers.values()) if (!a.out) animateActor(a, dt);
+      return;
+    }
     if (!other) return;
     if (other.npc) updateNpc(dt);
-    else {
+    animateActor(other, dt);
+  }
+
+  function animateActor(a, dt) {
+    if (!a.npc) {
       const k = 1 - Math.exp(-12 * dt);
-      other.pos.lerp(other.target, k);
-      other.heading = angleLerp(other.heading, other.targetHeading, k);
+      a.pos.lerp(a.target, k);
+      a.heading = angleLerp(a.heading, a.targetHeading, k);
     }
-    other.char.root.position.copy(other.pos);
-    other.char.root.rotation.y = other.heading;
-    other.char.setMotion(other.speed);
-    other.char.update(dt);
+    a.char.root.position.copy(a.pos);
+    a.char.root.rotation.y = a.heading;
+    a.char.setMotion(a.speed);
+    a.char.update(dt);
 
     // pasos del otro, más fuertes cuanto más cerca
-    other.stepAcc += other.speed * dt;
-    if (other.speed > 0.4 && other.stepAcc > (other.speed > 3 ? 0.9 : 0.7)) {
-      other.stepAcc = 0;
-      const v = clamp(1 - other.pos.distanceTo(player.pos) / 12, 0, 1);
-      if (v > 0.05) Sound.step(other.role === "monster" ? "heavy" : LV.surface, v * 0.8);
+    a.stepAcc += a.speed * dt;
+    if (a.speed > 0.4 && a.stepAcc > (a.speed > 3 ? 0.9 : 0.7)) {
+      a.stepAcc = 0;
+      const v = clamp(1 - a.pos.distanceTo(player.pos) / 12, 0, 1);
+      if (v > 0.05) Sound.step(a.role === "monster" ? "heavy" : LV.surface, v * 0.8);
     }
   }
 
@@ -2963,8 +3087,10 @@ const Scene3D = (() => {
       }
     }
     // tensión (latido y música) según la distancia al rival
-    if (other) {
-      const dist = other.pos.distanceTo(player.pos);
+    const rivals = config.mode === "mp"
+      ? activePeers(player.role === "monster" ? "survivor" : "monster") : (other ? [other] : []);
+    if (rivals.length) {
+      const dist = Math.min(...rivals.map((a) => a.pos.distanceTo(player.pos)));
       Sound.setTension(clamp(1 - (dist - 1.5) / 8, 0, 1));
     }
     updateLiveHud();
@@ -3220,7 +3346,7 @@ const Scene3D = (() => {
     // acceso para depurar desde la consola: Scene3D.debug.player.pos, etc.
     get debug() {
       return {
-        player, other, cam, camera, scene, G, LV, config, clearPath, routeNext, navGraph, wallBetween,
+        player, other, peers, cam, camera, scene, G, LV, config, clearPath, routeNext, navGraph, wallBetween,
         activate: (id) => activateLevel(id),
         get battery() { return battery; }, set battery(v) { battery = v; },
         get flashOn() { return flashOn; },

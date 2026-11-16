@@ -3,19 +3,21 @@
    WebSocket contra server.js. Expone window.Net:
      Net.create(name, cfg)   crea sala (cfg = { scenario, difficulty }) → "created"
      Net.join(code)          se une     → evento "joined"
+     Net.start()             el anfitrión comienza la partida → "start" a todos
      Net.sendState(p, r, a)  posición / rotación / animación
      Net.sendEvent(e, d)     eventos sueltos
      Net.leave()
      Net.on(tipo, fn)        "created" "joined" "peer-join"
                              "peer-leave" "state" "event"
-                             "error" "close" "ping"
+                             "host" "start" "error" "close" "ping"
+   Salas de hasta 4: 1 monstruo y hasta 3 supervivientes.
    ========================================================= */
 
 const Net = (() => {
   let ws = null;
   let pingTimer = null;
   const handlers = {};
-  const info = { connected: false, code: null, id: null, role: null, peers: [], ping: 0, settings: null };
+  const info = { connected: false, code: null, id: null, role: null, peers: [], ping: 0, settings: null, host: null, started: false };
 
   function on(type, fn) { (handlers[type] ||= []).push(fn); }
   function emit(type, data) { (handlers[type] || []).forEach((fn) => fn(data)); }
@@ -47,7 +49,7 @@ const Net = (() => {
       ws.addEventListener("close", () => {
         const wasInRoom = !!info.code;
         clearInterval(pingTimer);
-        Object.assign(info, { connected: false, code: null, role: null, peers: [] });
+        Object.assign(info, { connected: false, code: null, role: null, peers: [], host: null, started: false });
         ws = null;
         emit("close", { wasInRoom });
       });
@@ -59,10 +61,17 @@ const Net = (() => {
     try { msg = JSON.parse(ev.data); } catch { return; }
     switch (msg.t) {
       case "created":
-        Object.assign(info, { code: msg.code, id: msg.id, role: msg.role, peers: [], settings: msg.settings });
+        Object.assign(info, { code: msg.code, id: msg.id, role: msg.role, peers: [], settings: msg.settings, host: msg.id, started: false });
         break;
       case "joined":
-        Object.assign(info, { code: msg.code, id: msg.id, role: msg.role, peers: msg.peers, settings: msg.settings });
+        Object.assign(info, { code: msg.code, id: msg.id, role: msg.role, peers: msg.peers, settings: msg.settings, host: msg.host, started: false });
+        break;
+      case "host":
+        info.host = msg.id;
+        break;
+      case "start":
+        info.started = true;
+        info.peers = msg.players.filter((p) => p.id !== info.id);
         break;
       case "peer-join":
         info.peers.push({ id: msg.id, role: msg.role, name: msg.name });
@@ -90,9 +99,10 @@ const Net = (() => {
     await connect();
     raw({ t: "join", code, name });
   }
+  function start() { raw({ t: "start" }); }
   function leave() {
     if (info.code) raw({ t: "leave" });
-    Object.assign(info, { code: null, role: null, peers: [] });
+    Object.assign(info, { code: null, role: null, peers: [], host: null, started: false });
   }
 
   // redondeo para mandar menos bytes
@@ -109,8 +119,9 @@ const Net = (() => {
   window.addEventListener("pagehide", () => { if (ws) ws.close(); });
 
   return {
-    on, create, join, leave, sendState, sendEvent, info,
+    on, create, join, start, leave, sendState, sendEvent, info,
     get inRoom() { return !!info.code; },
+    get isHost() { return !!info.code && info.host === info.id; },
   };
 })();
 

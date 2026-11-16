@@ -217,6 +217,14 @@ body.in-game .backdrop{ opacity: 0; }
 
 /* ================= Multijugador ================= */
 .mp-grid{ display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+.mp-lobby{ margin-top: 1.2rem; }
+.mp-lobby h3 small{ font-family: var(--font-body, inherit); text-transform: none; letter-spacing: 0; opacity: .7; font-size: .8rem; margin-left: .4rem; }
+.mp-players{ list-style: none; margin: .6rem 0 .9rem; padding: 0; display: grid; gap: .4rem; }
+.mp-players li{ display: flex; align-items: center; gap: .6rem; padding: .45rem .7rem; border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.25); }
+.mp-players li.me{ border-color: rgba(255,255,255,.22); }
+.mp-players li.empty{ opacity: .45; font-style: italic; }
+.mp-players .who{ flex: 1; }
+.mp-players .badge{ font-size: .7rem; opacity: .7; text-transform: uppercase; letter-spacing: .08em; }
 @media (max-width: 680px){ .mp-grid{ grid-template-columns: 1fr; } }
 
 .card{

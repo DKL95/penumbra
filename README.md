@@ -70,7 +70,7 @@ Para verificar: `https://penumbra-xxxx.onrender.com/api/public.php` debe respond
 |---|---|
 | **Escape** | Menú → Jugar → Escape. Campaña de los **3 escenarios** en orden. En cada uno junta 3 reliquias y abre la salida. Vida, inventario y batería pasan contigo. |
 | **Supervivencia** | Menú → Jugar → Supervivencia + escenario. No hay salida: las reliquias reaparecen sin fin y el monstruo acelera con cada una. Puntúan las reliquias y el tiempo. |
-| **Multijugador** | Menú → Multijugador. El anfitrión elige escenario y dificultad y es el **superviviente**; quien se une con el código es el **monstruo**. Gana el superviviente si escapa; el monstruo, si le quita todas las vidas. |
+| **Multijugador** | Menú → Multijugador. Salas de hasta **4 jugadores: 1 monstruo y hasta 3 supervivientes**. El anfitrión elige escenario y dificultad y es superviviente; el primero que se une con el código es el **monstruo** y los siguientes, supervivientes. Cuando están listos, el anfitrión pulsa *Comenzar partida*. Las reliquias son del equipo (las 3 abren la salida para todos) y cada superviviente escapa o cae por su cuenta. El monstruo gana si atrapa al menos a la mitad. |
 
 Controles: **WASD** moverse · **Shift** correr · **ratón** mirar (clic para capturarlo) ·
 **E** recoger / abrir (monstruo: atacar, también con clic) · **F** linterna (monstruo: rugir) ·
@@ -118,7 +118,7 @@ La linterna encendida ayuda a ver, pero el monstruo te detecta de más lejos.
 | 2 modos de juego distintos (10) | Escape (campaña) y Supervivencia (reliquias infinitas), además del Multijugador versus. |
 | Servicio web + red social (4) | Servicio **PHP** en `api/` (`auth.php`, `scores.php`, `public.php`) con **MySQL** (`api/sql/schema.sql`), consumido con `fetch` desde `js/api.js`. El servidor **recalcula** los puntos (`api/lib/rules.php`). **Facebook Login** con el SDK de JS y el token verificado en PHP contra la Graph API. Compartir el resultado en Facebook y X. Almacenamiento local: `localStorage` (configuración, sesión, puntajes sin conexión). |
 | Sonido y música + 3 ítems (10) | `js/audio.js`: música de fondo distinta por escenario (drone + melodía generativa con eco), latido y cuerdas de tensión según la distancia al monstruo, pasos según el suelo, efectos de ítems, golpes, cerraduras, victoria y derrota. Ítems: batería, botiquín, agua bendita (+ reliquias). |
-| Multijugador en tiempo real (10) | `server.js` + `js/net.js`: posiciones a 15 Hz con interpolación y eventos de partida (recoger, vida, golpe, agua bendita, fin) sincronizados. |
+| Multijugador en tiempo real (10) | `server.js` + `js/net.js`: salas de hasta 4 (1 monstruo + 3 supervivientes) con sala de espera; posiciones a 15 Hz con interpolación y eventos de partida (recoger, vida, golpe dirigido, agua bendita, escapar/caer) sincronizados entre todos. |
 | *(Opcional)* Partículas + IA (4) | Partículas: polvo, chispas de un fluorescente roto, ceniza y brasas, destello del agua bendita. IA: el monstruo ronda, te **ve** (distancia + línea de visión sin muros, más lejos si llevas la linterna), te **oye** según la dificultad, te persigue, ataca y busca donde te vio por última vez. |
 
 ## Pruebas
@@ -127,7 +127,7 @@ La linterna encendida ayuda a ver, pero el monstruo te detecta de más lejos.
 npm test
 ```
 
-46 pruebas con `node --test`: reglas y puntaje (`test/rules.test.js`), servicio web PHP de punta a
+52 pruebas con `node --test`: reglas y puntaje (`test/rules.test.js`), servicio web PHP de punta a
 punta con una base SQLite temporal, incluida la igualdad de la fórmula de puntaje JS = PHP
 (`test/api.test.js`, se omite si no hay PHP), y multijugador (`test/multiplayer.test.js`).
 

@@ -213,12 +213,72 @@ test("unirse a una sala inexistente da error", async () => {
   assert.match(guest.msg.msg, /No existe/);
 });
 
-test("un 3er jugador no puede entrar a una sala llena", async () => {
+test("hasta 4 jugadores: 1 monstruo y 3 supervivientes; el 5º no entra", async () => {
+  const host = await createRoom();
+  const roles = [];
+  for (let i = 0; i < 3; i++) roles.push((await joinRoom(host.msg.code, "J" + i)).msg.role);
+  assert.deepEqual(roles, ["monster", "survivor", "survivor"]);
+  const fifth = await joinRoom(host.msg.code);
+  assert.equal(fifth.msg.t, "error");
+  assert.match(fifth.msg.msg, /llena/);
+});
+
+test("el 4º jugador ve a los otros 3 con sus roles", async () => {
+  const host = await createRoom("Ana");
+  await joinRoom(host.msg.code, "Beto");
+  await joinRoom(host.msg.code, "Ceci");
+  const g3 = await joinRoom(host.msg.code, "Dani");
+  assert.deepEqual(g3.msg.peers.map((p) => [p.name, p.role]), [["Ana", "survivor"], ["Beto", "monster"], ["Ceci", "survivor"]]);
+  assert.equal(g3.msg.host, host.msg.id);
+});
+
+test("start: solo el anfitrión, con monstruo y superviviente; avisa a todos con la lista", async () => {
+  const host = await createRoom("Ana");
+  sendMsg(host.ws, { t: "start" });
+  assert.match((await waitFor(host.ws, "error")).msg, /monstruo/);
+  const g1 = await joinRoom(host.msg.code, "Beto");
+  const g2 = await joinRoom(host.msg.code, "Ceci");
+  sendMsg(g1.ws, { t: "start" });           // un invitado no puede comenzar
+  await expectNone(host.ws, "start");
+  sendMsg(host.ws, { t: "start" });
+  for (const ws of [host.ws, g1.ws, g2.ws]) {
+    const st = await waitFor(ws, "start");
+    assert.equal(st.players.length, 3);
+    assert.deepEqual(st.players.map((p) => p.role).sort(), ["monster", "survivor", "survivor"]);
+  }
+});
+
+test("una partida ya empezada no acepta más jugadores", async () => {
   const host = await createRoom();
   await joinRoom(host.msg.code);
-  const third = await joinRoom(host.msg.code);
-  assert.equal(third.msg.t, "error");
-  assert.match(third.msg.msg, /llena/);
+  sendMsg(host.ws, { t: "start" });
+  await waitFor(host.ws, "start");
+  const late = await joinRoom(host.msg.code);
+  assert.equal(late.msg.t, "error");
+  assert.match(late.msg.msg, /empezó/);
+});
+
+test("si el anfitrión sale de la sala, otro jugador queda como anfitrión", async () => {
+  const host = await createRoom();
+  const g1 = await joinRoom(host.msg.code);
+  const g2 = await joinRoom(host.msg.code);
+  await close(host.ws);
+  const h = await waitFor(g1.ws, "host");
+  assert.equal(h.id, g1.msg.id);
+  assert.equal((await waitFor(g2.ws, "host")).id, g1.msg.id);
+});
+
+test("los eventos llegan a todos los demás jugadores de la sala", async () => {
+  const host = await createRoom();
+  const g1 = await joinRoom(host.msg.code);
+  const g2 = await joinRoom(host.msg.code);
+  sendMsg(g2.ws, { t: "event", e: "pick", d: { id: "mansion-0" } });
+  for (const ws of [host.ws, g1.ws]) {
+    const ev = await waitFor(ws, "event");
+    assert.equal(ev.id, g2.msg.id);
+    assert.equal(ev.e, "pick");
+  }
+  await expectNone(g2.ws, "event");
 });
 
 test("el nombre se recorta a 16 caracteres", async () => {

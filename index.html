@@ -100,7 +100,7 @@
   <section class="screen" id="screen-multiplayer" data-title="Multijugador">
     <div class="panel">
       <h2 class="screen-h">Multijugador</h2>
-      <p class="screen-sub">Un jugador escapa. El otro es el monstruo. En tiempo real.</p>
+      <p class="screen-sub">Hasta 3 supervivientes contra 1 monstruo, en tiempo real.</p>
 
       <div class="mp-grid">
         <div class="card">
@@ -121,7 +121,7 @@
           </label>
           <div class="code-box" id="mp-code">— — — —</div>
           <button class="btn" data-action="generate-code">Crear sala</button>
-          <p class="micro" id="mp-host-status">Serás el <b>superviviente</b>: junta 3 reliquias y escapa.</p>
+          <p class="micro" id="mp-host-status">Serás <b>superviviente</b>. El primero en unirse es el monstruo; hasta 2 más entran como supervivientes.</p>
         </div>
 
         <div class="card">
@@ -129,8 +129,15 @@
           <p class="muted">Escribe el código de tu anfitrión.</p>
           <input class="field" id="mp-join" type="text" maxlength="4" placeholder="Ej. 4KZ9" autocomplete="off" />
           <button class="btn" data-action="join-game">Unirse</button>
-          <p class="micro" id="mp-join-status">Serás el <b>monstruo</b>: atrápalo antes de que escape.</p>
+          <p class="micro" id="mp-join-status">Si la sala aún no tiene monstruo, lo serás tú; si ya lo tiene, entras como <b>superviviente</b>.</p>
         </div>
+      </div>
+
+      <div class="card mp-lobby" id="mp-lobby" hidden>
+        <h3>Sala <span id="mp-lobby-code"></span> <small id="mp-lobby-info"></small></h3>
+        <ul class="mp-players" id="mp-players"></ul>
+        <button class="btn" data-action="start-mp" id="mp-start" hidden disabled>Comenzar partida</button>
+        <p class="micro" id="mp-lobby-status"></p>
       </div>
 
       <div class="role-hint">

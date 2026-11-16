@@ -164,9 +164,48 @@
   }
   function resetMultiplayerScreen() {
     codeBox.textContent = "— — — —";
-    setStatus(hostStatus, "Serás el <b>superviviente</b>: junta 3 reliquias y escapa.");
-    setStatus(joinStatus, "Serás el <b>monstruo</b>: atrápalo antes de que escape.");
+    setStatus(hostStatus, "Serás <b>superviviente</b>. El primero en unirse es el monstruo; hasta 2 más entran como supervivientes.");
+    setStatus(joinStatus, "Si la sala aún no tiene monstruo, lo serás tú; si ya lo tiene, entras como <b>superviviente</b>.");
     $("mp-scenario").disabled = $("mp-difficulty").disabled = false;
+    $("mp-lobby").hidden = true;
+  }
+
+  // sala de espera: lista de jugadores y botón de comenzar (solo el anfitrión)
+  const MAX_MP = 4;
+  function renderLobby() {
+    const i = Net.info;
+    if (!i.code) { $("mp-lobby").hidden = true; return; }
+    if ($("mp-lobby").hidden) {
+      $("mp-lobby").hidden = false;
+      $("mp-lobby").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    $("mp-lobby-code").textContent = i.code;
+    $("mp-lobby-info").textContent = settingsLabel(i.settings);
+    const all = [{ id: i.id, role: i.role, name: playerName() || "Tú" }].concat(i.peers)
+      .sort((a, b) => (a.role === "monster") - (b.role === "monster") || a.id - b.id);
+    const rows = all.map((p) => {
+      const tag = p.role === "monster" ? '<span class="tag tag-monster">Monstruo</span>' : '<span class="tag tag-survivor">Superviviente</span>';
+      const marks = [p.id === i.id ? "tú" : "", p.id === i.host ? "anfitrión" : ""].filter(Boolean).join(" · ");
+      return `<li class="${p.id === i.id ? "me" : ""}">${tag}<span class="who">${esc(p.name || "Jugador")}</span><span class="badge">${marks}</span></li>`;
+    });
+    for (let k = all.length; k < MAX_MP; k++) {
+      const hasMonster = all.some((p) => p.role === "monster");
+      rows.push(`<li class="empty">${!hasMonster && k === all.length ? "Esperando al monstruo…" : "Lugar libre para un superviviente"}</li>`);
+    }
+    $("mp-players").innerHTML = rows.join("");
+    const ready = all.some((p) => p.role === "monster") && all.some((p) => p.role === "survivor");
+    const host = Net.isHost;
+    $("mp-start").hidden = !host;
+    $("mp-start").disabled = !ready;
+    setStatus($("mp-lobby-status"), host
+      ? (ready ? `Listos ${all.length} de ${MAX_MP}. Comienza cuando quieras (pueden entrar más hasta que comience).`
+               : "Comparte el código. Hace falta que entre el monstruo para comenzar.")
+      : "Esperando a que el anfitrión comience la partida…", ready || !host ? "ok" : "");
+  }
+  function startMultiplayer() {
+    if (!Net.isHost) return;
+    Sound.confirm();
+    Net.start();
   }
   const settingsLabel = (s) => s
     ? `${Rules.SCENARIOS[s.scenario].label} · ${Rules.difficulty(s.difficulty).label}` : "";
@@ -179,7 +218,8 @@
   }
 
   function playerName() {
-    return Api.user ? Api.user.name : undefined;
+    if (Api.user) return Api.user.name;
+    try { return localStorage.getItem("penumbra.lastName") || undefined; } catch { return undefined; }
   }
 
   async function generateCode() {
@@ -213,21 +253,29 @@
   Net.on("created", (m) => {
     codeBox.textContent = m.code.split("").join(" ");
     $("mp-scenario").disabled = $("mp-difficulty").disabled = true;
-    setStatus(hostStatus, `Sala creada (${settingsLabel(m.settings)}). Esperando a que se una el monstruo…`, "ok");
+    setStatus(hostStatus, `Sala creada (${settingsLabel(m.settings)}). Comparte el código.`, "ok");
+    renderLobby();
   });
   Net.on("peer-join", (m) => {
     if (currentId !== "screen-multiplayer") return;   // ya en juego: lo maneja la escena
     Sound.confirm();
-    setStatus(hostStatus, m.role === "monster" ? "¡El monstruo se unió!" : "¡Se unió un jugador!", "ok");
-    setTimeout(() => enterMultiplayerGame(Net.info.role), 700);
+    renderLobby();
   });
+  Net.on("peer-leave", () => { if (currentId === "screen-multiplayer") renderLobby(); });
+  Net.on("host", () => { if (currentId === "screen-multiplayer") renderLobby(); });
   Net.on("joined", (m) => {
-    setStatus(joinStatus, `Dentro de la partida <b>${m.code}</b> — ${settingsLabel(m.settings)}.`, "ok");
-    setTimeout(() => enterMultiplayerGame(m.role), 900);
+    const role = m.role === "monster" ? "el <b>monstruo</b>" : "<b>superviviente</b>";
+    setStatus(joinStatus, `Dentro de la sala <b>${m.code}</b>: eres ${role}.`, "ok");
+    renderLobby();
+  });
+  Net.on("start", () => {
+    if (currentId !== "screen-multiplayer") return;
+    Sound.confirm();
+    setTimeout(() => enterMultiplayerGame(Net.info.role), 400);
   });
   Net.on("error", (m) => {
     Sound.error();
-    setStatus(joinStatus, m.msg, "err");
+    setStatus(Net.inRoom ? $("mp-lobby-status") : joinStatus, m.msg, "err");
   });
   Net.on("close", () => {
     if (currentId === "screen-multiplayer") {
@@ -241,9 +289,9 @@
   const TITLES = {
     escaped: ["Escapaste", "Saliste con vida… por ahora."],
     caught: ["Te atraparon", "La penumbra te reclamó."],
-    won: ["Lo atrapaste", "El superviviente no volverá a ver la luz."],
-    lost: ["Escapó", "El superviviente encontró la salida."],
-    abandon: ["Partida terminada", "Tu rival abandonó la partida."],
+    won: ["Cacería completa", "No volverán a ver la luz."],
+    lost: ["Se te escaparon", "Encontraron la salida."],
+    abandon: ["Partida terminada", "Los demás jugadores abandonaron la partida."],
   };
 
   window.addEventListener("penumbra:result", (e) => {
@@ -252,7 +300,8 @@
     const [title, sub] = TITLES[s.result] || TITLES.abandon;
     $("result-title").textContent = title;
     $("result-sub").textContent = s.mode === "survival"
-      ? `Juntaste ${s.relics} ${s.relics === 1 ? "reliquia" : "reliquias"} en ${Rules.formatTime(s.seconds)}.` : sub;
+      ? `Juntaste ${s.relics} ${s.relics === 1 ? "reliquia" : "reliquias"} en ${Rules.formatTime(s.seconds)}.`
+      : s.detail ? `${s.detail} ${sub}` : sub;
     $("result-title").className = s.won ? "win" : "lose";
     $("result-points").textContent = s.points.toLocaleString("es-MX");
     const rows = [
@@ -552,6 +601,7 @@
       case "exit-to-menu": Sound.click(); exitToMenu(); break;
       case "generate-code": generateCode(); break;
       case "join-game": joinGame(); break;
+      case "start-mp": startMultiplayer(); break;
       case "login-facebook": loginFacebook(); break;
       case "login-guest": loginGuest(); break;
       case "logout": logout(); break;
