@@ -3,6 +3,8 @@
    Hospital abandonado: recepción → pasillo principal con
    sala de pacientes, farmacia, rayos X, archivo, quirófano y
    morgue → elevador de servicio (la salida, necesita 3 fusibles).
+   Ala sur (desde la recepción): pabellón psiquiátrico con celdas
+   acolchadas, lavandería y cuarto de calderas.
 
    Construido con figuras básicas (cajas, cilindros, esferas,
    toros, planos) y texturas procedurales en <canvas>:
@@ -16,10 +18,35 @@
    ========================================================= */
 
 export function buildHospital(k) {
-  const { THREE, M, box, cyl, sph, wallBox, floorPlane, decal, tex, cvs, grain, bloodCanvas, writingCanvas, V } = k;
+  const { THREE, M, tex, cvs, grain, bloodCanvas, writingCanvas, V } = k;
   const scene = k.scene;
   const H = 3.0, T = 0.15;
-  const ob = (x1, x2, z1, z2) => k.addObstacle({ x1, x2, z1, z2 });
+
+  /* ---------------- escala de la planta ----------------
+     Todo el hospital original está escrito en coordenadas de una planta
+     más chica. S agranda cuartos y pasillos (posiciones, muros, pisos y
+     la ronda del monstruo) SIN agrandar los muebles: una cama sigue
+     midiendo lo mismo, solo queda más espacio entre las cosas. Las piezas
+     dentro de un grupo (parent) usan coordenadas locales y no se escalan.
+     El ala sur nueva (más abajo) usa directamente las medidas finales. */
+  const S = 1.5;
+  const sc = (v) => v * S;
+  const box = (w, h, d, mat, x, y, z, parent) =>
+    parent ? k.box(w, h, d, mat, x, y, z, parent) : k.box(w, h, d, mat, sc(x), y, sc(z));
+  const cyl = (rt, rb, h, mat, x, y, z, parent, seg) =>
+    parent ? k.cyl(rt, rb, h, mat, x, y, z, parent, seg) : k.cyl(rt, rb, h, mat, sc(x), y, sc(z), null, seg);
+  const sph = (r, mat, x, y, z, parent) => (parent ? k.sph(r, mat, x, y, z, parent) : k.sph(r, mat, sc(x), y, sc(z)));
+  const wallBox = (x1, x2, z1, z2, h, mat, y0) => k.wallBox(sc(x1), sc(x2), sc(z1), sc(z2), h, mat, y0);
+  const floorPlane = (x1, x2, z1, z2, y, mat, tileM, down) => k.floorPlane(sc(x1), sc(x2), sc(z1), sc(z2), y, mat, tileM, down);
+  const decal = (t, w, h, x, y, z, rx, ry, rz) => k.decal(t, w, h, sc(x), y, sc(z), rx, ry, rz);
+  // obstáculo de un mueble: se mueve con la escala pero conserva su tamaño
+  const ob = (x1, x2, z1, z2) => {
+    const cx = sc((x1 + x2) / 2), cz = sc((z1 + z2) / 2), hx = (x2 - x1) / 2, hz = (z2 - z1) / 2;
+    k.addObstacle({ x1: cx - hx, x2: cx + hx, z1: cz - hz, z2: cz + hz });
+  };
+  // medidas finales (sin escala) para el ala nueva
+  const R = { box: k.box, cyl: k.cyl, sph: k.sph, wallBox: k.wallBox, floorPlane: k.floorPlane, decal: k.decal,
+    ob: (x1, x2, z1, z2) => k.addObstacle({ x1, x2, z1, z2 }) };
 
   /* ---------------- texturas ---------------- */
   function tileCanvas() {
@@ -140,7 +167,9 @@ export function buildHospital(k) {
   };
 
   /* ---------------- muros con huecos de puerta ---------------- */
+  const keepWidth = (gaps) => gaps.map(([a, b]) => { const c = (a + b) / 2, w = (b - a) / (2 * S); return [c - w, c + w]; });
   function wallZ(x, z1, z2, gaps = []) {
+    gaps = keepWidth(gaps);
     let z = z1;
     for (const [g1, g2] of gaps) {
       if (g1 > z) wallBox(x - T, x + T, z, g1, H, mat.wall);
@@ -152,6 +181,7 @@ export function buildHospital(k) {
     if (z < z2) wallBox(x - T, x + T, z, z2, H, mat.wall);
   }
   function wallX(z, x1, x2, gaps = []) {
+    gaps = keepWidth(gaps);
     let x = x1;
     for (const [g1, g2] of gaps) {
       if (g1 > x) wallBox(x, g1, z - T, z + T, H, mat.wall);
@@ -166,7 +196,7 @@ export function buildHospital(k) {
   }
   function sign(text, x, y, z, ry, w = 1.2) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 4), new THREE.MeshStandardMaterial({ map: signTex(text), roughness: 0.6 }));
-    m.position.set(x, y, z); m.rotation.y = ry;
+    m.position.set(sc(x), y, sc(z)); m.rotation.y = ry;
     scene.add(m);
     return m;
   }
@@ -177,7 +207,7 @@ export function buildHospital(k) {
     const tube = box(axis === "z" ? 0.07 : len, 0.05, axis === "z" ? len : 0.07, mat.tubeOn, x, H - 0.1, z);
     tube.castShadow = false;
     const l = new THREE.PointLight(color, intensity, 9, 1.8);
-    l.position.set(x, H - 0.35, z);
+    l.position.set(sc(x), H - 0.35, sc(z));
     scene.add(l);
     if (mode) k.addFlicker({ light: l, bulb: tube, base: intensity, soft: mode === "soft", phase });
     return l;
@@ -199,7 +229,7 @@ export function buildHospital(k) {
   room(-8, -1.5, 11, 14);
   room(1.5, 8, 9, 13);
 
-  wallX(-6, -6.15, 6.15);
+  wallX(-6, -6.15, 6.15, [[-5.2, -4.0]]);   // puerta al ala sur
   wallZ(-6, -6, 0);
   wallZ(6, -6, 0);
   wallX(0, -6.15, -1.5);
@@ -262,9 +292,9 @@ export function buildHospital(k) {
   box(0.06, 0.5, 0.06, M.brass, 5.5, 1.15, -5.6);
   box(0.3, 0.06, 0.06, M.brass, 5.5, 1.25, -5.6);
   cyl(0.03, 0.03, 0.1, M.wax, 5.35, 0.95, -5.35);
-  k.flameMesh(0.8).position.set(5.35, 1.04, -5.35);
+  k.flameMesh(0.8).position.set(sc(5.35), 1.04, sc(-5.35));
   const altar = new THREE.PointLight(0xffb060, 0.6, 3, 2);
-  altar.position.set(5.35, 1.2, -5.35);
+  altar.position.set(sc(5.35), 1.2, sc(-5.35));
   scene.add(altar);
   ob(5.15, 5.85, -5.85, -5.15);
   decal(bloodCanvas(1), 1.3, 1.3, -1.6, 0.014, -2.6, -Math.PI / 2, 0, 0.3);
@@ -277,7 +307,7 @@ export function buildHospital(k) {
      ============================================================ */
   // silla de ruedas abandonada
   const wc = new THREE.Group();
-  wc.position.set(0.9, 0, 14.6); wc.rotation.y = -0.5;
+  wc.position.set(sc(0.9), 0, sc(14.6)); wc.rotation.y = -0.5;
   scene.add(wc);
   box(0.45, 0.05, 0.45, mat.dark, 0, 0.5, 0, wc);
   box(0.45, 0.5, 0.05, mat.dark, 0, 0.78, -0.22, wc);
@@ -292,7 +322,7 @@ export function buildHospital(k) {
   ob(-1.35, -0.65, 8.6, 10.6);
   // letrero de piso mojado
   const wf = new THREE.Group();
-  wf.position.set(0.9, 0, 3.0);
+  wf.position.set(sc(0.9), 0, sc(3.0));
   scene.add(wf);
   for (const r of [0.25, -0.25]) { const p = box(0.32, 0.6, 0.02, mat.yellow, 0, 0.3, r * 0.4, wf); p.rotation.x = r; }
   ob(0.7, 1.1, 2.8, 3.2);
@@ -313,7 +343,7 @@ export function buildHospital(k) {
 
   // fluorescente roto colgando de un cable: se balancea y suelta chispas
   const hang = new THREE.Group();
-  hang.position.set(0.5, H - 0.05, 21.2);
+  hang.position.set(sc(0.5), H - 0.05, sc(21.2));
   scene.add(hang);
   cyl(0.005, 0.005, 0.7, mat.dark, 0, -0.35, 0, hang);
   const broken = new THREE.Group();
@@ -338,7 +368,8 @@ export function buildHospital(k) {
   let sparkTimer = 1;
 
   const DUST = 260, dustPos = new Float32Array(DUST * 3);
-  const dustZones = [[-6, 6, -6, 0], [-1.5, 1.5, 0, 24], [-9, -1.5, 3, 11], [1.5, 8, 3, 9], [-8, -1.5, 14, 21], [1.5, 9, 13, 22]];
+  const dustZones = [[-6, 6, -6, 0], [-1.5, 1.5, 0, 24], [-9, -1.5, 3, 11], [1.5, 8, 3, 9], [-8, -1.5, 14, 21], [1.5, 9, 13, 22]]
+    .map((z) => z.map(sc)).concat([[-16, -2.25, -24, -10], [2.25, 14, -24, -9.5], [-2.25, 2.25, -24, -9]]);
   for (let i = 0; i < DUST; i++) {
     const [x1, x2, z1, z2] = dustZones[i % dustZones.length];
     dustPos.set([x1 + Math.random() * (x2 - x1), Math.random() * H, z1 + Math.random() * (z2 - z1)], i * 3);
@@ -355,7 +386,7 @@ export function buildHospital(k) {
      ============================================================ */
   function bed(x, z, ry, tipped = false) {
     const g = new THREE.Group();
-    g.position.set(x, 0, z); g.rotation.y = ry;
+    g.position.set(sc(x), 0, sc(z)); g.rotation.y = ry;
     scene.add(g);
     box(0.9, 0.08, 1.95, mat.steel, 0, 0.55, 0, g);
     box(0.85, 0.14, 1.85, mat.mattress, 0, 0.66, 0, g);
@@ -385,7 +416,7 @@ export function buildHospital(k) {
   // cortinas entre camas
   for (const x of [-6.7, -4.5]) for (const [z, zz] of [[4.15, 3.2], [9.85, 10.8]]) {
     const c = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 2.0), mat.curtain);
-    c.position.set(x, 1.3, z); c.rotation.y = Math.PI / 2;
+    c.position.set(sc(x), 1.3, sc(z)); c.rotation.y = Math.PI / 2;
     scene.add(c);
     box(0.03, 0.03, 2.2, mat.chrome, x, 2.35, zz + (z - zz));
   }
@@ -432,14 +463,14 @@ export function buildHospital(k) {
   // lámpara quirúrgica: luz FOCAL con sombra
   cyl(0.02, 0.02, 0.8, mat.chrome, -5, H - 0.4, 18.6, null, 8);
   const lamp = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.06, 10, 24), mat.white);
-  lamp.position.set(-5, H - 0.85, 18.6); lamp.rotation.x = Math.PI / 2;
+  lamp.position.set(sc(-5), H - 0.85, sc(18.6)); lamp.rotation.x = Math.PI / 2;
   scene.add(lamp);
   const lampGlass = new THREE.Mesh(new THREE.CircleGeometry(0.32, 24), new THREE.MeshBasicMaterial({ color: 0xfffbea }));
-  lampGlass.position.set(-5, H - 0.9, 18.6); lampGlass.rotation.x = Math.PI / 2;
+  lampGlass.position.set(sc(-5), H - 0.9, sc(18.6)); lampGlass.rotation.x = Math.PI / 2;
   scene.add(lampGlass);
   const surg = new THREE.SpotLight(0xfff6e0, 6, 6, 0.6, 0.5, 1.5);
-  surg.position.set(-5, H - 0.95, 18.6);
-  surg.target.position.set(-5, 0, 18.6);
+  surg.position.set(sc(-5), H - 0.95, sc(18.6));
+  surg.target.position.set(sc(-5), 0, sc(18.6));
   surg.castShadow = true;
   surg.shadow.mapSize.set(512, 512);
   scene.add(surg, surg.target);
@@ -454,7 +485,7 @@ export function buildHospital(k) {
   cyl(0.02, 0.02, 1.3, mat.steel, -6.8, 0.65, 19.8, null, 8);
   box(0.5, 0.35, 0.08, mat.dark, -6.8, 1.45, 19.8);
   const mon = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.28), new THREE.MeshBasicMaterial({ map: monitorTex() }));
-  mon.position.set(-6.8, 1.45, 19.75); mon.rotation.y = Math.PI;
+  mon.position.set(sc(-6.8), 1.45, sc(19.75)); mon.rotation.y = Math.PI;
   scene.add(mon);
   ob(-7.1, -6.5, 19.5, 20.1);
   // tanques de gas
@@ -487,7 +518,7 @@ export function buildHospital(k) {
 
   function body(x, y, z, ry) {
     const g = new THREE.Group();
-    g.position.set(x, y, z); g.rotation.y = ry;
+    g.position.set(sc(x), y, sc(z)); g.rotation.y = ry;
     scene.add(g);
     box(0.5, 0.18, 1.6, mat.sheet, 0, 0.09, 0, g);
     sph(0.13, mat.sheet, 0, 0.12, -0.85, g);
@@ -496,7 +527,7 @@ export function buildHospital(k) {
   }
   function gurney(x, z, ry, withBody) {
     const g = new THREE.Group();
-    g.position.set(x, 0, z); g.rotation.y = ry;
+    g.position.set(sc(x), 0, sc(z)); g.rotation.y = ry;
     scene.add(g);
     box(1.9, 0.05, 0.6, mat.steel, 0, 0.8, 0, g);
     for (const sx of [-0.85, 0.85]) for (const sz of [-0.25, 0.25]) {
@@ -518,7 +549,7 @@ export function buildHospital(k) {
      ============================================================ */
   function cabinet(x, z, ry, drawersOpen = 0) {
     const g = new THREE.Group();
-    g.position.set(x, 0, z); g.rotation.y = ry;
+    g.position.set(sc(x), 0, sc(z)); g.rotation.y = ry;
     scene.add(g);
     box(0.5, 1.35, 0.45, mat.steel, 0, 0.675, 0, g);
     for (let i = 0; i < 4; i++) {
@@ -538,7 +569,7 @@ export function buildHospital(k) {
   ob(-6.7, -5.0, 12.4, 13.3);
   // un archivero volcado bloquea a medias el rincón
   const fallen = cabinet(-4.5, 13.45, 0);
-  fallen.rotation.x = -Math.PI / 2; fallen.position.y = 0.25; fallen.position.z = 13.1;
+  fallen.rotation.x = -Math.PI / 2; fallen.position.y = 0.25; fallen.position.z = sc(13.1);
   ob(-4.8, -4.2, 12.95, 13.85);
   // escritorio con máquina de escribir junto al pasillo
   box(0.9, 0.05, 0.6, mat.counter, -2.15, 0.76, 11.45);
@@ -581,11 +612,11 @@ export function buildHospital(k) {
   for (const z of [10.1, 11.0, 11.9]) {
     box(0.06, 0.75, 0.8, mat.steel, 8 - T - 0.03, 1.65, z);
     const film = new THREE.Mesh(new THREE.PlaneGeometry(0.66, 0.62), xrayMat);
-    film.position.set(8 - T - 0.07, 1.65, z); film.rotation.y = -Math.PI / 2;
+    film.position.set(sc(8 - T) - 0.07, 1.65, sc(z)); film.rotation.y = -Math.PI / 2;
     scene.add(film);
   }
   const glow = new THREE.PointLight(0xbfe4ff, 0.8, 5, 2);
-  glow.position.set(7.0, 1.7, 11.0);
+  glow.position.set(sc(7.0), 1.7, sc(11.0));
   scene.add(glow);
   k.addFlicker({ light: glow, base: 0.8, phase: 5.2 });
   // mesa de rayos X con el brazo del tubo encima
@@ -610,7 +641,7 @@ export function buildHospital(k) {
   }
   // silla de ruedas volcada y una mancha
   const wc2 = new THREE.Group();
-  wc2.position.set(7.3, 0.3, 12.4); wc2.rotation.set(0, 0.8, Math.PI / 2);
+  wc2.position.set(sc(7.3), 0.3, sc(12.4)); wc2.rotation.set(0, 0.8, Math.PI / 2);
   scene.add(wc2);
   box(0.45, 0.05, 0.45, mat.dark, 0, 0, 0, wc2);
   box(0.45, 0.5, 0.05, mat.dark, 0, 0.28, -0.22, wc2);
@@ -677,8 +708,176 @@ export function buildHospital(k) {
     da.needsUpdate = true;
   }
 
-  /* ---------------- datos del nivel ---------------- */
-  return {
+
+  /* ============================================================
+     ALA SUR (medidas finales, sin escala): pasillo, pabellón
+     psiquiátrico, lavandería y cuarto de calderas
+     ============================================================ */
+  const WT = 0.2;
+  function rWallZ(x, z1, z2, gaps = [], h = H) {
+    let z = z1;
+    for (const [g1, g2] of gaps) {
+      if (g1 > z) R.wallBox(x - WT, x + WT, z, g1, h, mat.wall);
+      R.wallBox(x - WT, x + WT, g1, g2, h - 2.3, mat.wall, 2.3);
+      for (const gz of [g1, g2]) R.box(0.44, 2.3, 0.1, mat.white, x, 1.15, gz);
+      z = g2;
+    }
+    if (z < z2) R.wallBox(x - WT, x + WT, z, z2, h, mat.wall);
+  }
+  function rWallX(z, x1, x2, gaps = [], h = H) {
+    let x = x1;
+    for (const [g1, g2] of gaps) {
+      if (g1 > x) R.wallBox(x, g1, z - WT, z + WT, h, mat.wall);
+      R.wallBox(g1, g2, z - WT, z + WT, h - 2.3, mat.wall, 2.3);
+      for (const gx of [g1, g2]) R.box(0.1, 2.3, 0.44, mat.white, gx, 1.15, z);
+      x = g2;
+    }
+    if (x < x2) R.wallBox(x, x2, z - WT, z + WT, h, mat.wall);
+  }
+  const rRoom = (x1, x2, z1, z2, floorMat = mat.tile) => {
+    R.floorPlane(x1, x2, z1, z2, 0, floorMat, 2);
+    R.floorPlane(x1, x2, z1, z2, H, mat.ceil, 1.2, true);
+  };
+  const fl = (x, z, ...rest) => fluoro(x / S, z / S, ...rest);         // fluoro() trabaja en la planta original
+  const rSign = (text, x, y, z, ry, w) => sign(text, x / S, y, z / S, ry, w);
+
+  // pasillo sur
+  rRoom(-8.4, -5.4, -26, -9.2);
+  rWallZ(-8.4, -26, -9.2, [[-18.6, -17.4]]);
+  rWallZ(-5.4, -26, -9.2, [[-13.1, -11.9], [-21.6, -20.4]]);
+  rWallX(-26, -8.6, -5.2);
+  R.decal(bloodCanvas(4), 0.9, 3.2, -6.9, 0.013, -15, -Math.PI / 2, 0, 0.1);      // rastro arrastrado
+  rSign("PABELLÓN PSIQUIÁTRICO", -8.4 + WT + 0.01, 2.62, -18, Math.PI / 2, 1.8);
+  rSign("CALDERAS", -5.4 - WT - 0.01, 2.62, -21, -Math.PI / 2, 1.0);
+  rSign("LAVANDERÍA", -5.4 - WT - 0.01, 2.62, -12.5, -Math.PI / 2, 1.1);
+  fl(-6.9, -12, "z", 0xdff5ea, 0.9, "flicker", 0.4);
+  fl(-6.9, -22, "z", 0xdff5ea, 0.8, "soft");
+
+  // ---------- pabellón psiquiátrico: celdas acolchadas ----------
+  function padCanvas() {
+    const c = cvs(256), x = c.getContext("2d");
+    x.fillStyle = "#cfcabb"; x.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+      const g = x.createRadialGradient(32 + i * 64, 32 + j * 64, 4, 32 + i * 64, 32 + j * 64, 40);
+      g.addColorStop(0, "rgba(255,255,255,.35)"); g.addColorStop(1, "rgba(60,55,45,.35)");
+      x.fillStyle = g; x.fillRect(i * 64, j * 64, 64, 64);
+      x.fillStyle = "#6a6458"; x.beginPath(); x.arc(i * 64, j * 64, 3, 0, Math.PI * 2); x.fill();
+    }
+    grain(x, 256, 256, 4000, 0.3);
+    return c;
+  }
+  const padMat = new THREE.MeshStandardMaterial({ map: tex(padCanvas(), 1, 1), roughness: 0.95 });
+  rRoom(-20, -8.4, -26, -12, new THREE.MeshStandardMaterial({ color: 0x55534c, roughness: 1 }));
+  rWallZ(-20, -26, -12);
+  rWallX(-12, -20.2, -8.2);
+  rWallX(-26, -20.2, -8.2);
+  // cuatro celdas de 3.5 m en la pared oeste, con puerta de hierro entreabierta
+  for (let i = 0; i < 4; i++) {
+    const z1 = -26 + i * 3.5, z2 = z1 + 3.5, zc = (z1 + z2) / 2;
+    if (i > 0) R.wallBox(-20, -15.5, z1 - 0.12, z1 + 0.12, H, padMat);
+    R.wallBox(-15.62, -15.38, z1 + 0.12, zc - 0.6, H, padMat);
+    R.wallBox(-15.62, -15.38, zc + 0.6, z2 - 0.12, H, padMat);
+    R.wallBox(-15.62, -15.38, zc - 0.6, zc + 0.6, H - 2.2, padMat, 2.2);
+    // acolchado por dentro
+    R.box(0.03, H - 0.2, 3.2, padMat, -19.78, H / 2, zc).castShadow = false;
+    const door = new THREE.Group();
+    door.position.set(-15.4, 0, zc - 0.6); door.rotation.y = -0.9 - i * 0.25;
+    scene.add(door);
+    k.box(0.06, 2.1, 1.2, mat.steel, 0.0, 1.05, 0.6, door);
+    k.box(0.07, 0.25, 0.35, mat.dark, 0.0, 1.6, 0.6, door);     // mirilla
+    // colchón en el piso y camisa de fuerza
+    R.box(0.9, 0.18, 1.9, padMat, -18.9, 0.09, zc + (i % 2 ? 0.4 : -0.4));
+    R.ob(-19.4, -18.4, zc - 1.4, zc + 1.4);
+    if (i % 2 === 0) R.box(0.5, 0.12, 0.7, mat.white, -17.6, 0.06, zc + 0.8).rotation.y = 0.6;
+    R.decal(writingCanvas(["DÉJENME SALIR", "NO ESTOY LOCO", "ME VE", "1 2 3 4"][i]), 1.8, 0.45, -19.74, 1.7, zc, 0, Math.PI / 2);
+  }
+  R.decal(bloodCanvas(6), 1.2, 1.2, -17.2, 0.013, -16.3, -Math.PI / 2, 0, 1.2);
+  // estación de enfermería y silla volcada en el pabellón
+  R.box(2.6, 1.05, 0.7, mat.counter, -11.3, 0.52, -24.8);
+  R.box(2.8, 0.05, 0.85, mat.white, -11.3, 1.07, -24.8);
+  R.ob(-12.7, -9.9, -25.3, -24.3);
+  for (let i = 0; i < 5; i++) R.box(0.22, 0.02, 0.3, mat.paper, -12.2 + i * 0.45, 1.1, -24.75).rotation.y = i * 0.7;
+  const chair = new THREE.Group(); chair.position.set(-11.6, 0.25, -21.8); chair.rotation.set(0.2, 1.1, Math.PI / 2); scene.add(chair);
+  k.box(0.45, 0.05, 0.45, mat.dark, 0, 0, 0, chair); k.box(0.45, 0.5, 0.05, mat.dark, 0, 0.28, -0.22, chair);
+  R.ob(-12, -11.2, -22.2, -21.4);
+  fl(-12, -15.5, "x", 0xdff5ea, 0.9, "flicker", 2.1);
+  fl(-12, -22.5, "x", 0xdff5ea, 0.7, "soft");
+  fl(-17.8, -19, "z", 0xffd8d0, 0.5, "flicker", 3.3);
+
+  // ---------- lavandería ----------
+  rRoom(-5.4, 6, -16, -9.2);
+  rWallZ(6, -16, -9.2);
+  rWallX(-16, -5.6, 6.2, [[0.6, 1.8]]);       // puerta a las calderas
+  for (let i = 0; i < 5; i++) {                 // lavadoras industriales en la pared norte
+    const x = -3.6 + i * 1.6;
+    R.box(1.2, 1.3, 0.9, mat.white, x, 0.65, -9.95);
+    const glass = R.cyl(0.36, 0.36, 0.05, mat.dark, x, 0.75, -9.48);
+    glass.rotation.x = Math.PI / 2;
+    R.cyl(0.4, 0.4, 0.03, mat.chrome, x, 0.75, -9.5).rotation.x = Math.PI / 2;
+  }
+  R.ob(-4.3, 3.3, -10.45, -9.4);
+  R.box(3.2, 0.08, 1.1, mat.steel, 1.0, 0.9, -13.0);       // mesa para doblar
+  R.box(3.0, 0.85, 0.9, mat.steel, 1.0, 0.43, -13.0);
+  R.ob(-0.65, 2.65, -13.6, -12.4);
+  for (const [cx, cz, r] of [[-3.6, -13.3, 0.3], [4.6, -14.6, -0.5]]) {    // carritos con ropa
+    const cart = new THREE.Group(); cart.position.set(cx, 0, cz); cart.rotation.y = r; scene.add(cart);
+    k.box(0.7, 0.7, 1.0, new THREE.MeshStandardMaterial({ color: 0x4a5560, roughness: 0.8 }), 0, 0.55, 0, cart);
+    k.box(0.6, 0.25, 0.9, mat.white, 0, 0.95, 0, cart);
+    R.ob(cx - 0.6, cx + 0.6, cz - 0.6, cz + 0.6);
+  }
+  // sábanas colgadas de un mecate (una manchada)
+  const sheet = new THREE.MeshStandardMaterial({ color: 0xdcdcd2, roughness: 1, side: THREE.DoubleSide });
+  const bloodSheet = new THREE.MeshStandardMaterial({ map: bloodCanvas(7), color: 0xffffff, roughness: 1, side: THREE.DoubleSide, transparent: true });
+  R.cyl(0.01, 0.01, 10.5, mat.dark, 0.3, 2.35, -14.8).rotation.z = Math.PI / 2;
+  for (let i = 0; i < 5; i++) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.5), sheet);
+    m.position.set(-3.6 + i * 1.9, 1.6, -14.8); m.rotation.y = 0.05 * (i - 2);
+    m.castShadow = true; scene.add(m);
+    if (i === 3) {
+      const st = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2), bloodSheet);
+      st.position.set(-3.6 + i * 1.9, 1.55, -14.79); scene.add(st);
+    }
+  }
+  fl(0.3, -12.4, "x", 0xe8f4ff, 0.9, "soft");
+
+  // ---------- cuarto de calderas ----------
+  rRoom(-5.4, 8, -26, -16, new THREE.MeshStandardMaterial({ color: 0x3c3a36, roughness: 1 }));
+  rWallZ(8, -26, -16);
+  rWallX(-26, -5.6, 8.2);
+  const rustM = new THREE.MeshStandardMaterial({ color: 0x5a3a26, roughness: 0.8, metalness: 0.5 });
+  for (const bz of [-19.2, -23.2]) {           // dos calderas horizontales
+    const b = R.cyl(1.05, 1.05, 4.2, rustM, 3.6, 1.15, bz, null, 24);
+    b.rotation.z = Math.PI / 2;
+    for (const ex of [1.5, 5.7]) R.cyl(1.08, 1.08, 0.08, mat.dark, ex, 1.15, bz, null, 24).rotation.z = Math.PI / 2;
+    R.cyl(0.12, 0.12, 1.9, mat.steel, 3.6, 2.5, bz, null, 10);   // chimenea al techo
+    R.ob(1.4, 5.8, bz - 1.1, bz + 1.1);
+  }
+  // tuberías en el techo y válvulas
+  for (const [z, r] of [[-17, 0.09], [-17.4, 0.06], [-24.9, 0.1]]) R.cyl(r, r, 13, mat.steel, 1.3, H - 0.3, z).rotation.z = Math.PI / 2;
+  for (const vx of [-3.2, -1.5]) {
+    R.cyl(0.05, 0.05, 1.6, mat.steel, vx, 1.6, -25.6);
+    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.02, 6, 16), new THREE.MeshStandardMaterial({ color: 0x8a1a12, roughness: 0.6 }));
+    wheel.position.set(vx, 1.5, -25.45); scene.add(wheel);
+  }
+  // horno con la boca encendida y montón de carbón
+  R.box(1.8, 1.6, 1.4, mat.dark, -3.4, 0.8, -18.2);
+  const mouth = R.box(0.8, 0.5, 0.02, new THREE.MeshBasicMaterial({ color: 0xff7a2a }), -3.4, 0.6, -17.49);
+  mouth.castShadow = false;
+  R.ob(-4.35, -2.45, -18.95, -17.45);
+  const coal = new THREE.Mesh(new THREE.ConeGeometry(0.9, 0.6, 10), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 1, flatShading: true }));
+  coal.position.set(-3.6, 0.3, -21.6); scene.add(coal);
+  R.ob(-4.4, -2.8, -22.4, -20.8);
+  const furnace = new THREE.PointLight(0xff6a24, 1.6, 9, 1.8);
+  furnace.position.set(-3.4, 0.7, -17.0);
+  scene.add(furnace);
+  k.addFlicker({ light: furnace, base: 1.6, soft: true });
+  R.decal(writingCanvas("ÉL VIVE ABAJO"), 2.4, 0.6, 7.78, 1.8, -21, 0, -Math.PI / 2);
+  fl(1.3, -21, "x", 0xffe0c0, 0.6, "flicker", 1.2);
+
+  /* ---------------- datos del nivel ----------------
+     (escritos en la planta original; finishLevel() los escala y les
+     agrega el ala sur) */
+  const data = {
     name: "Hospital San Judas",
     background: 0x050707, fogColor: 0x0a0d0c, fog: 0.065, exposure: 1.45,
     surface: "tile",
@@ -731,4 +930,50 @@ export function buildHospital(k) {
     exit: { x: 0, z: 23.0, r: 1.3, label: "el elevador", beaconY: 2.75 },
     update,
   };
+  return finishLevel(data);
+
+  function finishLevel(d) {
+    const P = (v) => V(sc(v.x), 0, sc(v.z));
+    const at = (o) => ({ ...o, x: sc(o.x), z: sc(o.z) });
+    d.bounds = { x1: -20.4, x2: sc(9), z1: -26.4, z2: sc(24) };
+    // zonas de cámara: los cuartos crecen; las de los huecos de puerta conservan su ancho
+    d.camZones = d.camZones.map((z) => {
+      if (z.h > 2.2) return { ...z, x1: sc(z.x1), x2: sc(z.x2), z1: sc(z.z1), z2: sc(z.z2) };
+      const cx = sc((z.x1 + z.x2) / 2), cz = sc((z.z1 + z.z2) / 2), hx = (z.x2 - z.x1) / 2, hz = (z.z2 - z.z1) / 2;
+      return { ...z, x1: cx - hx, x2: cx + hx, z1: cz - hz, z2: cz + hz };
+    }).concat([
+      { x1: -8.15, x2: -5.65, z1: -25.75, z2: -8.6, h: H - 0.2 },          // pasillo sur
+      { x1: -19.75, x2: -8.65, z1: -25.75, z2: -12.25, h: H - 0.2 },       // pabellón
+      { x1: -5.15, x2: 5.75, z1: -15.75, z2: -9.45, h: H - 0.2 },          // lavandería
+      { x1: -5.15, x2: 7.75, z1: -25.75, z2: -16.25, h: H - 0.2 },         // calderas
+      { x1: -7.4, x2: -6.4, z1: -9.7, z2: -8.6, h: 2.1 },                  // puerta recepción → pasillo sur
+      { x1: -8.9, x2: -7.9, z1: -18.5, z2: -17.5, h: 2.1 },
+      { x1: -5.9, x2: -4.9, z1: -13.0, z2: -12.0, h: 2.1 },
+      { x1: -5.9, x2: -4.9, z1: -21.5, z2: -20.5, h: 2.1 },
+      { x1: 0.7, x2: 1.7, z1: -16.5, z2: -15.5, h: 2.1 },
+    ]);
+    d.spawn.survivor.pos = P(d.spawn.survivor.pos);
+    d.spawn.monster.pos = P(d.spawn.monster.pos);
+    const path = d.npcPath.map(P);
+    // vuelta por el ala sur, desde la recepción
+    const south = [[-6.9, -7.2], [-6.9, -11], [-6.9, -18], [-12, -18], [-12, -14], [-17, -17.2], [-13.6, -22.6], [-6.9, -21],
+      [-1.5, -21], [0, -23.8], [1.2, -17.5], [1.2, -15], [-1, -11.5], [4.5, -11.5], [-1, -12], [-6.9, -12.5], [-6.9, -8]]
+      .map(([x, z]) => V(x, 0, z));
+    path.splice(2, 0, ...south);
+    d.npcPath = path;
+    d.npcStart += south.length;
+    d.items = d.items.map(at);
+    // una reliquia se va al cuarto de calderas; la del quirófano queda para Supervivencia
+    const qi = d.items.findIndex((i) => i.kind === "relic" && i.z > 20 && i.x < 0);
+    const oldRelic = d.items.splice(qi, 1)[0];
+    d.items.push(
+      { kind: "relic", x: 6.9, z: -24.8 },                                  // detrás de las calderas
+      { kind: "battery", x: -18.6, z: -13.6 },                              // celda
+      { kind: "medkit", x: 5.2, z: -10.7, skip: ["blackout"] },             // lavandería
+      { kind: "holywater", x: -10.4, z: -25.2, skip: ["blackout"] },        // enfermería
+    );
+    d.spots = d.spots.map(at).concat([{ x: oldRelic.x, z: oldRelic.z }, { x: -18.5, z: -21 }, { x: -6.9, z: -25 }, { x: 3, z: -14.6 }]);
+    d.exit = at(d.exit);
+    return d;
+  }
 }

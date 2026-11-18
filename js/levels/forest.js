@@ -2,8 +2,10 @@
    PENUMBRA — Escenario 3: BOSQUE DE CENIZA
    Bosque quemado al aire libre, de noche: claro con fogata,
    cabaña del guardabosques, cementerio con mausoleo, pozo
-   viejo y un estanque de agua negra. La salida es la reja del
-   bosque (necesita 3 piedras rúnicas).
+   viejo y un estanque de agua negra. Afuera, en un terreno de
+   120 × 120 m: capilla en ruinas, aserradero abandonado, torre
+   de vigilancia y una camioneta accidentada. La salida es la
+   reja del bosque (necesita 3 piedras rúnicas).
 
    - Árboles calcinados y pinos con InstancedMesh (una sola
      malla para cientos de troncos/ramas/copas).
@@ -19,7 +21,7 @@ export function buildForest(k) {
   const { THREE, M, box, cyl, sph, wallBox, floorPlane, decal, tex, cvs, grain, writingCanvas, V } = k;
   const scene = k.scene;
   const ob = (x1, x2, z1, z2) => k.addObstacle({ x1, x2, z1, z2 });
-  const B = 24;          // medio lado del área jugable
+  const B = 60;          // medio lado del área jugable (120 × 120 m)
 
   // generador pseudoaleatorio con semilla (mulberry32)
   let seed = 1337;
@@ -82,14 +84,15 @@ export function buildForest(k) {
   };
 
   /* ---------------- suelo y cielo ---------------- */
-  floorPlane(-36, 36, -36, 36, 0, mat.ground, 4);
+  floorPlane(-B - 16, B + 16, -B - 16, B + 16, 0, mat.ground, 4);
   const moon = new THREE.Mesh(new THREE.CircleGeometry(3.2, 32), new THREE.MeshBasicMaterial({ color: 0xe6e9dc, fog: false }));
-  moon.position.set(-28, 30, 45);
+  moon.position.set(-50, 55, 85);
+  moon.scale.setScalar(1.8);
   moon.lookAt(0, 0, 0);
   scene.add(moon);
   const starPos = new Float32Array(500 * 3);
   for (let i = 0; i < 500; i++) {
-    const a = rnd() * Math.PI * 2, e = 0.15 + rnd() * 1.3, r = 65;
+    const a = rnd() * Math.PI * 2, e = 0.15 + rnd() * 1.3, r = 120;
     starPos.set([Math.cos(a) * Math.cos(e) * r, Math.sin(e) * r, Math.sin(a) * Math.cos(e) * r], i * 3);
   }
   const starGeo = new THREE.BufferGeometry();
@@ -304,6 +307,152 @@ export function buildForest(k) {
   decal(k.bloodCanvas(2), 1.3, 1.3, CX - 1.0, 0.02, CZ - 2.4, -Math.PI / 2, 0, 0.6);
 
   /* ============================================================
+     CAPILLA EN RUINAS (noroeste, x -46..-34, z 30..44): muros de
+     piedra rotos, bancas volcadas, altar con velas y una cruz caída
+     ============================================================ */
+  const KX = -40, KZ = 37;
+  const RH = 3.2;
+  // muros con huecos y alturas irregulares (ruinas sin techo)
+  wallBox(KX - 6, KX - 5.6, KZ - 7, KZ - 2.5, RH, mat.stone);
+  wallBox(KX - 6, KX - 5.6, KZ + 0.5, KZ + 7, RH * 0.7, mat.stone);
+  wallBox(KX + 5.6, KX + 6, KZ - 7, KZ - 4, RH * 0.55, mat.stone);
+  wallBox(KX + 5.6, KX + 6, KZ - 1, KZ + 7, RH, mat.stone);
+  wallBox(KX - 6, KX + 6, KZ + 6.6, KZ + 7, RH * 1.25, mat.stone);       // ábside (fondo)
+  wallBox(KX - 6, KX - 1.6, KZ - 7, KZ - 6.6, RH * 0.8, mat.stone);
+  wallBox(KX + 1.6, KX + 6, KZ - 7, KZ - 6.6, RH * 0.45, mat.stone);
+  // arco de la entrada (sur)
+  for (const sx of [-1.6, 1.6]) box(0.5, 3.4, 0.5, mat.stone, KX + sx, 1.7, KZ - 6.8);
+  box(3.7, 0.45, 0.5, mat.stone, KX, 3.6, KZ - 6.8);
+  floorPlane(KX - 5.6, KX + 5.6, KZ - 6.6, KZ + 6.6, 0.02, new THREE.MeshStandardMaterial({ map: tex(stoneCanvas(), 1, 1), roughness: 1, color: 0x8a8880 }), 2);
+  // escombros
+  for (let i = 0; i < 14; i++) {
+    const r = new THREE.Mesh(new THREE.DodecahedronGeometry(rr(0.15, 0.45), 0), mat.stone);
+    r.position.set(KX + rr(-5, 5), 0.12, KZ + rr(-6, 6)); r.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
+    r.castShadow = r.receiveShadow = true;
+    scene.add(r);
+  }
+  // bancas volcadas
+  for (const [bx, bz, ry] of [[-2.5, -3, 0.2], [2.5, -3, -0.4], [-2.5, 0, 1.3], [2.6, 0.5, 0.1], [-2.4, 3, -0.2]]) {
+    const g = new THREE.Group(); g.position.set(KX + bx, 0, KZ + bz); g.rotation.y = ry; scene.add(g);
+    box(2.2, 0.08, 0.45, mat.plank, 0, 0.45, 0, g);
+    box(2.2, 0.5, 0.06, mat.plank, 0, 0.7, -0.2, g);
+    for (const lx of [-0.95, 0.95]) box(0.08, 0.45, 0.4, mat.plank, lx, 0.22, 0, g);
+    ob(KX + bx - 1.15, KX + bx + 1.15, KZ + bz - 0.4, KZ + bz + 0.4);
+  }
+  // altar con velas
+  box(2.0, 1.0, 0.9, mat.stone, KX, 0.5, KZ + 5.6);
+  ob(KX - 1.05, KX + 1.05, KZ + 5.1, KZ + 6.1);
+  for (const cx of [-0.7, -0.3, 0.3, 0.7]) {
+    cyl(0.03, 0.03, 0.2 + rnd() * 0.15, M.wax, KX + cx, 1.1, KZ + 5.5);
+    k.flameMesh(0.8).position.set(KX + cx, 1.3, KZ + 5.5);
+  }
+  const altarL = new THREE.PointLight(0xffa850, 1.0, 7, 2);
+  altarL.position.set(KX, 1.6, KZ + 5.2);
+  scene.add(altarL);
+  k.addFlicker({ light: altarL, base: 1.0, soft: true });
+  // cruz caída y mensaje en el muro
+  const cross = new THREE.Group(); cross.position.set(KX + 1.8, 0.15, KZ + 4.3); cross.rotation.set(0, 0.6, Math.PI / 2 - 0.15); scene.add(cross);
+  box(0.18, 2.4, 0.18, mat.plank, 0, 0, 0, cross);
+  box(1.2, 0.18, 0.18, mat.plank, 0, 0.5, 0, cross);
+  decal(writingCanvas("NADIE REZA AQUÍ"), 3.0, 0.75, KX, 2.4, KZ + 6.58, 0, Math.PI);
+  decal(k.bloodCanvas(5), 1.6, 1.6, KX - 0.5, 0.03, KZ + 3.8, -Math.PI / 2, 0, 0.4);
+
+  /* ============================================================
+     ASERRADERO ABANDONADO (este, x 34..48, z -18..-4): galerón
+     abierto con techo de lámina, sierra circular, troncos apilados
+     ============================================================ */
+  const AX = 41, AZ = -11;
+  for (const px of [-6, -2, 2, 6]) for (const pz of [-5, 5]) {
+    cyl(0.14, 0.16, 3.6, mat.plank, AX + px, 1.8, AZ + pz, null, 8);
+    ob(AX + px - 0.2, AX + px + 0.2, AZ + pz - 0.2, AZ + pz + 0.2);
+  }
+  const roofM = new THREE.MeshStandardMaterial({ color: 0x4a3f36, roughness: 0.6, metalness: 0.6, side: THREE.DoubleSide });
+  for (const sz of [-1, 1]) {
+    const r = box(13.2, 0.06, 5.8, roofM, AX, 3.95, AZ + sz * 2.7);
+    r.rotation.x = sz * 0.18;
+  }
+  floorPlane(AX - 6.5, AX + 6.5, AZ - 5.5, AZ + 5.5, 0.02, M.floor, 2);
+  // mesa con sierra circular
+  box(4.0, 0.9, 1.2, mat.plank, AX - 1, 0.45, AZ);
+  ob(AX - 3.05, AX + 1.05, AZ - 0.65, AZ + 0.65);
+  const saw = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.02, 32), new THREE.MeshStandardMaterial({ color: 0x8a8c8e, metalness: 0.9, roughness: 0.35 }));
+  saw.rotation.x = Math.PI / 2; saw.position.set(AX - 1, 1.1, AZ);
+  saw.castShadow = true;
+  scene.add(saw);
+  decal(k.bloodCanvas(3), 1.4, 1.0, AX - 1.2, 0.91, AZ, -Math.PI / 2, 0, 0);
+  // troncos apilados (pirámide)
+  for (let row = 0; row < 3; row++) for (let i = 0; i < 4 - row; i++) {
+    const lg = cyl(0.28, 0.28, 4.5, mat.bark, AX + 4.3, 0.28 + row * 0.5, AZ - 3.5 + i * 0.58 + row * 0.29, null, 10);
+    lg.rotation.x = Math.PI / 2;
+    lg.rotation.z = Math.PI / 2;
+  }
+  ob(AX + 2.0, AX + 6.6, AZ - 3.9, AZ - 1.2);
+  for (let i = 0; i < 3; i++) {
+    const lg = cyl(0.3, 0.3, 3.5, mat.bark, AX - 4.5 + i * 0.1, 0.3, AZ + 3.2 + i * 0.7, null, 10);
+    lg.rotation.z = Math.PI / 2;
+  }
+  ob(AX - 6.3, AX - 2.6, AZ + 2.8, AZ + 5.0);
+  // foco colgante que falla
+  cyl(0.004, 0.004, 1.0, M.cloth, AX, 3.4, AZ, null, 4);
+  const bulb = sph(0.08, new THREE.MeshBasicMaterial({ color: 0xffe0a0 }), AX, 2.85, AZ);
+  const sawL = new THREE.PointLight(0xffd8a0, 1.3, 11, 1.8);
+  sawL.position.set(AX, 2.7, AZ);
+  scene.add(sawL);
+  k.addFlicker({ light: sawL, bulb, base: 1.3, phase: 0.8 });
+  decal(writingCanvas("NO ENCIENDAS LA SIERRA"), 3.2, 0.7, AX, 2.0, AZ + 5.0, 0, Math.PI);
+
+  /* ============================================================
+     TORRE DE VIGILANCIA (suroeste, x -40, z -40) y cajas
+     ============================================================ */
+  const TX = -40, TZ = -40;
+  for (const [px, pz] of [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]]) {
+    const leg = cyl(0.12, 0.16, 7.5, mat.plank, TX + px, 3.75, TZ + pz, null, 8);
+    leg.rotation.set(-pz * 0.03, 0, px * 0.03);
+    ob(TX + px - 0.22, TX + px + 0.22, TZ + pz - 0.22, TZ + pz + 0.22);
+  }
+  for (const y of [2.2, 4.6]) for (const [a, b] of [[[-1.3, -1.3], [1.3, -1.3]], [[1.3, -1.3], [1.3, 1.3]], [[1.3, 1.3], [-1.3, 1.3]], [[-1.3, 1.3], [-1.3, -1.3]]]) {
+    const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+    box(Math.abs(b[0] - a[0]) || 0.08, 0.1, Math.abs(b[1] - a[1]) || 0.08, mat.plank, TX + mx, y, TZ + mz);
+  }
+  box(3.4, 0.15, 3.4, mat.plank, TX, 7.5, TZ);
+  for (const [w, d, x, z] of [[3.4, 0.08, 0, -1.7], [3.4, 0.08, 0, 1.7], [0.08, 3.4, -1.7, 0], [0.08, 3.4, 1.7, 0]])
+    box(w, 1.0, d, mat.plank, TX + x, 8.1, TZ + z);
+  const tRoof = new THREE.Mesh(new THREE.ConeGeometry(2.8, 1.6, 4), mat.plank);
+  tRoof.position.set(TX, 9.9, TZ); tRoof.rotation.y = Math.PI / 4; tRoof.castShadow = true;
+  scene.add(tRoof);
+  for (const [x, z, sz] of [[2.6, 0.5, 0.9], [3.3, -0.6, 0.7], [2.9, -1.5, 0.8], [-2.8, 2.4, 1.0]]) {
+    box(sz, sz, sz, mat.plank, TX + x, sz / 2, TZ + z).rotation.y = rnd();
+    ob(TX + x - sz * 0.6, TX + x + sz * 0.6, TZ + z - sz * 0.6, TZ + z + sz * 0.6);
+  }
+  const towerL = new THREE.PointLight(0xc8d8ff, 0.7, 9, 2);
+  towerL.position.set(TX, 6.8, TZ);
+  scene.add(towerL);
+
+  /* ============================================================
+     CAMIONETA ACCIDENTADA (noreste, x 38, z 40) con un faro vivo
+     ============================================================ */
+  const VX = 38, VZ = 40;
+  const truck = new THREE.Group(); truck.position.set(VX, 0, VZ); truck.rotation.set(0, 0.7, 0.12); scene.add(truck);
+  const paint = new THREE.MeshStandardMaterial({ color: 0x3a1e18, roughness: 0.6, metalness: 0.5 });
+  box(2.0, 0.9, 4.6, paint, 0, 0.85, 0, truck);
+  box(1.9, 0.8, 1.9, paint, 0, 1.7, 0.7, truck);
+  box(1.7, 0.6, 0.05, new THREE.MeshStandardMaterial({ color: 0x0c1418, roughness: 0.1, metalness: 0.6 }), 0, 1.75, 1.66, truck);
+  for (const [wx, wz] of [[-1, 1.5], [1, 1.5], [-1, -1.5], [1, -1.5]]) {
+    const w = cyl(0.42, 0.42, 0.3, M.soot, wx, 0.42, wz, truck, 14); w.rotation.z = Math.PI / 2;
+  }
+  const headL = sph(0.12, new THREE.MeshBasicMaterial({ color: 0xfff2c8 }), -0.7, 0.95, 2.31, truck);
+  const headBeam = new THREE.SpotLight(0xfff0c0, 6, 18, 0.45, 0.5, 1.5);
+  headBeam.position.set(-0.7, 0.95, 2.3);
+  headBeam.target.position.set(-1.5, 0, 9);
+  truck.add(headBeam, headBeam.target);
+  k.addFlicker({ light: headBeam, bulb: headL, base: 6, phase: 2.4 });
+  ob(VX - 2.6, VX + 2.6, VZ - 2.6, VZ + 2.6);
+  decal(k.bloodCanvas(4), 1.8, 1.8, VX - 2.2, 0.03, VZ + 2.6, -Math.PI / 2, 0, 1.1);
+  for (let i = 0; i < 6; i++) {    // maletas y cosas regadas
+    box(rr(0.3, 0.6), rr(0.15, 0.3), rr(0.3, 0.5), i % 2 ? mat.sack : M.woodMid, VX - 3 - rnd() * 3, 0.12, VZ + rr(-2, 3)).rotation.y = rnd() * 3;
+  }
+
+  /* ============================================================
      CERCA PERIMETRAL Y REJA DE SALIDA (norte)
      ============================================================ */
   const P = B + 0.2;
@@ -335,21 +484,33 @@ export function buildForest(k) {
   const PATH = [
     [0, -12], [0, -4], [4, -6], [6.5, -11], [10.5, -11], [6.5, -11], [4, 2], [4, 8],
     [4, 14.6], [13.5, 14.6], [14.6, 10.4], [13.5, 14.6],
-    [-4, 12.5], [-7.2, 12.5], [-13, 12.5], [-7.2, 12.5], [-4, 12.5], [0, 16], [-3, 6],
+    // camioneta y aserradero (noreste → este)
+    [22, 24], [33, 36], [36, 44], [28, 30], [30, 6], [34, -3], [41, -3], [41, -18], [30, -18],
+    // sur: rumbo al inicio y a la torre
+    [16, -30], [0, -44], [-20, -48], [-36, -36], [-44, -42], [-30, -24],
+    // oeste: capilla en ruinas y de regreso al cementerio
+    [-44, 0], [-44, 22], [-40, 28], [-40, 33], [-42, 39], [-37, 39], [-40, 28], [-28, 20],
+    [-4, 12.5], [-7.2, 12.5], [-13, 12.5], [-7.2, 12.5], [-4, 12.5], [0, 16], [0, 34], [0, 52], [0, 34], [-3, 6],
     [-8, 0], [-8.2, -6.5], [-14, -4], [-16, -14], [-4, -9],
   ];
   const ITEMS = [
-    { kind: "relic", x: 13.0, z: -13.0 },                       // dentro de la cabaña
+    { kind: "relic", x: -40, z: 41.6 },                         // capilla en ruinas, junto al altar
+    { kind: "relic", x: 44.5, z: -8.5 },                        // aserradero, tras los troncos
     { kind: "relic", x: -12.5, z: 13.6 },                       // cementerio
-    { kind: "relic", x: -8.6, z: -9.7 },                        // junto al pozo
     { kind: "battery", x: 1.5, z: 1.3 },
     { kind: "battery", x: 15, z: 4, skip: ["blackout"] },
-    { kind: "medkit", x: 9.0, z: -13.0, skip: ["blackout"] },
+    { kind: "battery", x: -38.2, z: -37.6 },                    // torre de vigilancia
+    { kind: "battery", x: 34.2, z: 43.5, skip: ["blackout"] },  // camioneta
+    { kind: "medkit", x: 13.0, z: -13.0 },                      // dentro de la cabaña
     { kind: "medkit", x: 6, z: 13, skip: ["dark", "blackout"] },
+    { kind: "medkit", x: -44.5, z: 33, skip: ["blackout"] },
     { kind: "holywater", x: -8, z: 16.6 },
+    { kind: "holywater", x: 37, z: -15.5, skip: ["blackout"] },
   ];
   const SPOTS = [{ x: 14, z: 15 }, { x: -16, z: -14 }, { x: 15, z: -17 }, { x: -17, z: 3 }, { x: 5, z: 17 }, { x: 16, z: -3 },
-    { x: 14.5, z: 11.2 }, { x: -21, z: -6 }, { x: 20, z: -20 }, { x: -20, z: 21 }];
+    { x: -8.6, z: -9.7 }, { x: -21, z: -6 }, { x: 20, z: -20 }, { x: -20, z: 21 },
+    { x: -35.5, z: 32.5 }, { x: 47, z: -14 }, { x: -43.5, z: -37 }, { x: 31, z: 38 }, { x: 0, z: 46 }, { x: 25, z: -45 },
+    { x: -50, z: 10 }, { x: 50, z: 25 }, { x: -25, z: -52 }, { x: 52, z: -48 }];
 
   function segDist(px, pz, ax, az, bx, bz) {
     const dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz;
@@ -361,7 +522,8 @@ export function buildForest(k) {
       const a = PATH[i], b = PATH[(i + 1) % PATH.length];
       if (segDist(x, z, a[0], a[1], b[0], b[1]) < 2.0) return false;
     }
-    const rects = [[6.5, 15.5, -15.5, -6.5], [-17, -5, 7, 19], [6.2, 13.8, 6.2, 13.8], [13, 20.5, 9, 16]];
+    const rects = [[6.5, 15.5, -15.5, -6.5], [-17, -5, 7, 19], [6.2, 13.8, 6.2, 13.8], [13, 20.5, 9, 16],
+      [KX - 8, KX + 8, KZ - 10, KZ + 9], [AX - 8.5, AX + 8.5, AZ - 7.5, AZ + 7.5], [TX - 5, TX + 5, TZ - 4, TZ + 4], [VX - 7, VX + 4, VZ - 5, VZ + 6]];
     for (const [x1, x2, z1, z2] of rects) if (x > x1 && x < x2 && z > z1 && z < z2) return false;
     const circles = [[0, 0, 4.5], [-10, -8, 2.6], [0, -B + 4, 3.5], [0, B - 1, 3.5], [3, -B + 6, 1.5], [1.8, -B + 5.4, 1.5]];
     for (const [cx, cz, r] of circles) if (Math.hypot(x - cx, z - cz) < r) return false;
@@ -370,15 +532,15 @@ export function buildForest(k) {
   }
 
   const trees = [];
-  for (let tries = 0; trees.length < 130 && tries < 6000; tries++) {
+  for (let tries = 0; trees.length < 520 && tries < 30000; tries++) {
     const x = rr(-B + 0.8, B - 0.8), z = rr(-B + 0.8, B - 0.8);
     if (!freeSpot(x, z)) continue;
     if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 1.6)) continue;
     trees.push({ x, z, solid: true });
   }
   // anillo denso por fuera de la cerca (solo decorado, tapa el horizonte)
-  for (let i = 0; i < 90; i++) {
-    const a = rnd() * Math.PI * 2, r = rr(B + 1.5, B + 9);
+  for (let i = 0; i < 220; i++) {
+    const a = rnd() * Math.PI * 2, r = rr(B + 1.5, B + 12);
     trees.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, solid: false });
   }
 
@@ -422,7 +584,7 @@ export function buildForest(k) {
   inst(branchGeo, mat.bark, branchM);
   inst(coneGeo, mat.pine, coneM);
   // rocas sueltas
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 240; i++) {
     const x = rr(-B, B), z = rr(-B, B);
     if (!freeSpot(x, z)) continue;
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rr(0.1, 0.3), 0), mat.stone);
@@ -439,7 +601,8 @@ export function buildForest(k) {
   moonLight.target.position.set(0, 0, 0);
   moonLight.castShadow = true;
   moonLight.shadow.mapSize.set(2048, 2048);
-  Object.assign(moonLight.shadow.camera, { left: -B - 4, right: B + 4, top: B + 4, bottom: -B - 4, near: 1, far: 80 });
+  Object.assign(moonLight.shadow.camera, { left: -28, right: 28, top: 28, bottom: -28, near: 1, far: 90 });
+  const MOON_OFF = new THREE.Vector3(-14, 18, 22);
   moonLight.shadow.bias = -0.0008;
   scene.add(moonLight, moonLight.target);
 
@@ -469,7 +632,12 @@ export function buildForest(k) {
   function update(dt, t, playerPos) {
     fire.intensity = 3.1 + Math.sin(t * 11) * 0.4 + Math.random() * 0.6;
     glow.material.opacity = 0.75 + Math.sin(t * 9) * 0.1 + Math.random() * 0.1;
-    if (playerPos) center.copy(playerPos);
+    if (playerPos) {
+      center.copy(playerPos);
+      // la sombra de la luna acompaña al jugador
+      moonLight.target.position.set(Math.round(center.x), 0, Math.round(center.z));
+      moonLight.position.copy(moonLight.target.position).add(MOON_OFF);
+    }
     // la ceniza cae alrededor del jugador y se recicla al salir del cubo
     const a = ashGeo.attributes.position;
     for (let i = 0; i < ASH; i++) {
@@ -502,7 +670,7 @@ export function buildForest(k) {
     background: 0x05070c, fogColor: 0x0a0d14, fog: 0.065, exposure: 1.7,
     surface: "grass",
     relicStyle: "rune",
-    navStep: 2.0,          // rejilla de navegación más abierta al aire libre
+    navStep: 3.0,          // rejilla de navegación más abierta al aire libre (mapa de 120 m)
     bounds: { x1: -B, x2: B, z1: -B, z2: B },
     camZones: [
       { x1: 8.4, x2: 13.6, z1: -13.6, z2: -8.4, h: CH - 0.2 },     // dentro de la cabaña

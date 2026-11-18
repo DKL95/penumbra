@@ -410,6 +410,7 @@ const Scene3D = (() => {
     const m = box(x2 - x1, h, z2 - z1, mat.map ? tiled(mat, len / 3, h / 2.125) : mat,
       (x1 + x2) / 2, y0 + h / 2, (z1 + z2) / 2);
     if (y0 < 1.5) WALLS.push({ x1, x2, z1, z2 });
+    m.userData.stretch = "wall";       // se alarga si la planta crece (ver stretchPlan)
     return m;
   }
 
@@ -419,10 +420,10 @@ const Scene3D = (() => {
     const w = b - a, m = (a + b) / 2;
     if (axis === "x") {
       for (const x of [a - 0.06, b + 0.06]) box(0.12, 2.3, 0.38, M.trim, x, 1.15, c);
-      box(w + 0.24, 0.14, 0.38, M.trim, m, 2.37, c);
+      box(w + 0.24, 0.14, 0.38, M.trim, m, 2.37, c).userData.stretch = "wall";
     } else {
       for (const z of [a - 0.06, b + 0.06]) box(0.38, 2.3, 0.12, M.trim, c, 1.15, z);
-      box(0.38, 0.14, w + 0.24, M.trim, c, 2.37, m);
+      box(0.38, 0.14, w + 0.24, M.trim, c, 2.37, m).userData.stretch = "wall";
     }
   }
 
@@ -431,6 +432,7 @@ const Scene3D = (() => {
     const len = Math.max(x2 - x1, z2 - z1), hh = y1 - y0;
     const m = box(x2 - x1, hh, z2 - z1, mat.map ? tiled(mat, len / 3, hh / 2.125) : mat, (x1 + x2) / 2, y0 + hh / 2, (z1 + z2) / 2);
     m.castShadow = false;
+    m.userData.stretch = "wall";
     return m;
   }
 
@@ -440,6 +442,7 @@ const Scene3D = (() => {
     p.rotation.x = down ? Math.PI / 2 : -Math.PI / 2;
     p.position.set((x1 + x2) / 2, y, (z1 + z2) / 2);
     p.receiveShadow = true;
+    p.userData.stretch = "floor";
     scene.add(p);
     return p;
   }
@@ -738,9 +741,11 @@ const Scene3D = (() => {
     const pivot = new THREE.Group();
     pivot.add(obj);
     pivot.scale.setScalar(size / Math.max(dim.x, dim.y, dim.z));
-    pivot.position.set(x, y, z);
+    const target = obj.userData.scene || scene;
+    const k = target.userData.planScale || 1;      // planta agrandada (ver stretchPlan)
+    pivot.position.set(x * k, y, z * k);
     pivot.rotation.y = ry;
-    (obj.userData.scene || scene).add(pivot);
+    target.add(pivot);
     return pivot;
   }
 
@@ -803,7 +808,8 @@ const Scene3D = (() => {
         const bone = dae.scene.getObjectByName("bone0" + String(7 + 5 * k).padStart(2, "0"));
         if (bone) legs.push({ bone, rz: bone.rotation.z, ph: (k % 2) * Math.PI });
       }
-      spider = { crawler, legs, y: 1.2, dir: 1, wait: 0, x: CORR.x1 + 0.2, z: 7.25 };
+      const k = target.userData.planScale || 1;
+      spider = { crawler, legs, y: 1.2, dir: 1, wait: 0, x: (CORR.x1 + 0.2) * k + 0.1, z: 7.25 * k };
       orientSpider();
     }).catch(loadFail("la araña"));
   }
@@ -1192,14 +1198,19 @@ const Scene3D = (() => {
     wallBox(-D, D, z1 - 0.15, z1 + 0.15, h - CORR.h, M.wallRed, CORR.h);
     wallBox(x1 - 0.15, x2 + 0.15, z2 - 0.15, z2 + 0.15, h, M.wallRed);
     wallBox(x1 - 0.15, x1 + 0.15, z1, z2, h, M.wallRed);
-    wallBox(x2 - 0.15, x2 + 0.15, z1, z2, h, M.wallRed);
+    // muro este con la puerta al patio (entre los dos ventanales)
+    const PD = [17.0, 18.1];
+    wallBox(x2 - 0.15, x2 + 0.15, z1, PD[0], h, M.wallRed);
+    wallBox(x2 - 0.15, x2 + 0.15, PD[1], z2, h, M.wallRed);
+    wallBox(x2 - 0.15, x2 + 0.15, PD[0], PD[1], h - 2.3, M.wallRed, 2.3);
+    doorFrame(PD[0], PD[1], x2, "z");
 
     // panelado bajo y cornisa
     const W = x2 - x1, L = z2 - z1, mz = (z1 + z2) / 2;
-    for (const x of [x1 + 0.17, x2 - 0.17]) {
-      box(0.05, 1.15, L, M.woodDark, x, 0.58, mz);
-      box(0.1, 0.18, L, M.trim, x, h - 0.12, mz);
-    }
+    for (const x of [x1 + 0.17, x2 - 0.17]) box(0.1, 0.18, L, M.trim, x, h - 0.12, mz);
+    box(0.05, 1.15, L, M.woodDark, x1 + 0.17, 0.58, mz);
+    box(0.05, 1.15, PD[0] - z1, M.woodDark, x2 - 0.17, 0.58, (z1 + PD[0]) / 2);
+    box(0.05, 1.15, z2 - PD[1], M.woodDark, x2 - 0.17, 0.58, (PD[1] + z2) / 2);
     box(W, 1.15, 0.05, M.woodDark, 0, 0.58, z2 - 0.17);
     box(W, 0.18, 0.1, M.trim, 0, h - 0.12, z2 - 0.17);
     box(x2 - D - 0.05, 1.15, 0.05, M.woodDark, -(D + (x2 - D) / 2), 0.58, z1 + 0.17);
@@ -1634,13 +1645,34 @@ const Scene3D = (() => {
     { x1: 1.74, x2: 2.16, z1: 2.64, z2: 3.06 },   // mesita con vela
   ];
 
+  /* ---------------- Pisos (mansión con segundo piso) ----------------
+     Un escenario puede tener un piso de arriba a la altura LV.floorY.
+     Cada muro u obstáculo indica su piso en `f` (0 abajo, 1 arriba,
+     -1 en ambos). Las escaleras son rampas (LV.ramps): dentro de una,
+     la altura sube de 0 a floorY. El piso de cada personaje sale de
+     su altura (pos.y); en un escenario de un solo piso todo es 0. */
+  const floorOf = (y) => (LV && LV.floorY && y > LV.floorY / 2 ? 1 : 0);
+  const onFloor = (b, f) => b.f === -1 || (b.f || 0) === f;
+  function rampAt(p) {
+    for (const r of (LV && LV.ramps) || []) if (p.x >= r.x1 && p.x <= r.x2 && p.z >= r.z1 && p.z <= r.z2) return r;
+    return null;
+  }
+  // altura sobre la rampa: 0 en su extremo `low` y floorY en `high` (a lo largo de z)
+  const rampY = (r, p) => clamp((p.z - r.low) / (r.high - r.low), 0, 1) * LV.floorY;
+
   function collide(pos, r = PLAYER_R) {
-    for (const b of WALLS) pushOut(pos, b, r);
-    for (const b of OBSTACLES) pushOut(pos, b, r);
+    const f = floorOf(pos.y);
+    for (const b of WALLS) if (onFloor(b, f)) pushOut(pos, b, r);
+    for (const b of OBSTACLES) if (onFloor(b, f)) pushOut(pos, b, r);
     // red de seguridad: nunca fuera del escenario
     const B = LV.bounds;
     pos.x = clamp(pos.x, B.x1 + r, B.x2 - r);
     pos.z = clamp(pos.z, B.z1 + r, B.z2 - r);
+    // altura: sobre la escalera sube o baja; fuera de ella, la del piso
+    if (LV.floorY) {
+      const ramp = rampAt(pos);
+      pos.y = ramp ? rampY(ramp, pos) : (f ? LV.floorY : 0);
+    }
   }
 
   function pushOut(pos, b, r) {
@@ -1677,16 +1709,21 @@ const Scene3D = (() => {
     return true;
   }
 
-  // ¿un muro corta la línea de visión a-b? (los muebles no tapan la vista)
+  // ¿un muro corta la línea de visión a-b? (los muebles no tapan la vista;
+  // entre pisos distintos nunca hay vista)
   function wallBetween(a, b) {
-    for (const w of WALLS) if (segHitsBox(a, b, w)) return true;
+    const f = floorOf(a.y);
+    if (f !== floorOf(b.y)) return true;
+    for (const w of WALLS) if (onFloor(w, f) && segHitsBox(a, b, w)) return true;
     return false;
   }
 
-  // ¿un personaje de radio r puede ir en línea recta de a a b sin chocar?
+  // ¿un personaje de radio r puede ir en línea recta de a a b sin chocar? (mismo piso)
   function clearPath(a, b, r = PLAYER_R - 0.04) {
-    for (const w of WALLS) if (segHitsBox(a, b, w, r)) return false;
-    for (const o of OBSTACLES) if (segHitsBox(a, b, o, r)) return false;
+    const f = floorOf(a.y);
+    if (f !== floorOf(b.y)) return false;
+    for (const w of WALLS) if (onFloor(w, f) && segHitsBox(a, b, w, r)) return false;
+    for (const o of OBSTACLES) if (onFloor(o, f) && segHitsBox(a, b, o, r)) return false;
     return true;
   }
 
@@ -1696,10 +1733,11 @@ const Scene3D = (() => {
      puntos se unen si se puede caminar en línea recta entre ellos.
      Para llegar a un destino que no se ve, Dijkstra elige la ruta más
      corta y el monstruo camina hacia el primer punto de esa ruta. */
-  function pointFree(x, z, r) {
+  function pointFree(x, z, r, f = 0) {
     const B = LV.bounds;
     if (x < B.x1 + r || x > B.x2 - r || z < B.z1 + r || z > B.z2 - r) return false;
     for (const b of WALLS.concat(OBSTACLES)) {
+      if (!onFloor(b, f)) continue;
       const cx = clamp(x, b.x1, b.x2), cz = clamp(z, b.z1, b.z2);
       if ((x - cx) ** 2 + (z - cz) ** 2 < r * r) return false;
     }
@@ -1713,8 +1751,26 @@ const Scene3D = (() => {
     for (let x = B.x1 + step / 2; x < B.x2; x += step)
       for (let z = B.z1 + step / 2; z < B.z2; z += step)
         if (pointFree(x, z, PLAYER_R + 0.08)) nodes.push(V3(x, 0, z));
+    // piso de arriba: rejilla solo donde hay piso
+    for (const U of LV.upper || [])
+      for (let x = U.x1 + step / 2; x < U.x2; x += step)
+        for (let z = U.z1 + step / 2; z < U.z2; z += step)
+          if (pointFree(x, z, PLAYER_R + 0.08, 1)) nodes.push(V3(x, LV.floorY, z));
+    // escaleras: un punto al pie y otro arriba, unidos entre sí
+    const stairs = [];
+    for (const r of LV.ramps || []) {
+      const dir = Math.sign(r.high - r.low), cx = (r.x1 + r.x2) / 2;
+      const lo = V3(cx, 0, r.low - dir * 0.7), hi = V3(cx, LV.floorY, r.high + dir * 0.7);
+      lo.rampEnd = hi.rampEnd = true;
+      stairs.push([nodes.length, nodes.length + 1]);
+      nodes.push(lo, hi);
+    }
     const n = nodes.length, link = step * 2.3;
     const adj = nodes.map(() => []);
+    for (const [a, b] of stairs) {
+      const d = nodes[a].distanceTo(nodes[b]);
+      adj[a].push([b, d]); adj[b].push([a, d]);
+    }
     for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
       const d = nodes[i].distanceTo(nodes[j]);
       if (!(i < P && j < P) && d > link) continue;     // la rejilla solo se une con vecinos
@@ -1761,13 +1817,17 @@ const Scene3D = (() => {
   }
 
   // zonas donde puede estar la cámara (con margen a los muros) y su techo
+  // (cada zona va de su piso y0 a su techo h: así la de abajo no sirve arriba)
   function camZone(p) {
-    for (const z of LV.camZones) if (p.x >= z.x1 && p.x <= z.x2 && p.z >= z.z1 && p.z <= z.z2) return z;
+    for (const z of LV.camZones)
+      if (p.x >= z.x1 && p.x <= z.x2 && p.z >= z.z1 && p.z <= z.z2 &&
+          (!LV.floorY || (p.y >= (z.y0 || 0) - 0.2 && p.y <= z.h + 0.6))) return z;
     return null;
   }
 
   // dos personajes no se atraviesan
   function separate(a, b, r = PLAYER_R) {
+    if (Math.abs(a.y - b.y) > 1) return;          // en pisos distintos no chocan
     const dx = b.x - a.x, dz = b.z - a.z;
     const d = Math.hypot(dx, dz), min = r * 2;
     if (d > 0 && d < min) {
@@ -1803,7 +1863,12 @@ const Scene3D = (() => {
     buildCobwebs();
     buildDust();
     buildLights();
-    return {
+    // cuartos 1.4 veces más grandes, luego lo nuevo con medidas finales
+    const PS = 1.4;
+    stretchPlan(PS);
+    buildPatio();
+    buildUpperFloor();
+    return finishMansion(PS, {
       name: "Mansión Ravenwood",
       background: 0x05060a, fogColor: 0x070810, fog: 0.055, exposure: 1.75,
       surface: "wood",
@@ -1853,7 +1918,382 @@ const Scene3D = (() => {
         .map(([x, z]) => ({ x, z })),
       exit: { x: HALL.x1 + 0.6, z: MANSION_EXIT_Z, r: 1.25, label: "la puerta principal", beaconY: 3.4 },
       update: updateMansion,
+    });
+  }
+
+  /* ---------------- Planta agrandada ----------------
+     La mansión original está escrita en una planta más chica. Después de
+     armarla, todo se separa S veces desde el centro: muros, pisos y tiras
+     largas (zócalos, cornisas, alfombras) se estiran; los muebles conservan
+     su tamaño y solo se mueven. Las luces alcanzan más lejos para que los
+     cuartos más grandes no queden a oscuras. Los modelos que cargan después
+     usan scene.userData.planScale (ver placeModel). */
+  function stretchPlan(S) {
+    const longAxis = (w, d) => (w >= 1.8 && w > d * 2 ? "x" : d >= 1.8 && d > w * 2 ? "z" : null);
+    for (const o of scene.children) {
+      o.position.x *= S;
+      o.position.z *= S;
+      if (o.isPointLight || o.isSpotLight) o.distance *= S;
+      if (o.isPoints) {
+        const a = o.geometry.attributes.position;
+        for (let i = 0; i < a.count; i++) { a.setX(i, a.getX(i) * S); a.setZ(i, a.getZ(i) * S); }
+        a.needsUpdate = true;
+      }
+      const st = o.userData.stretch;
+      if (st === "wall") { o.scale.x *= S; o.scale.z *= S; }
+      else if (st === "floor") { o.scale.x *= S; o.scale.y *= S; }
+      else if (o.isMesh && o.geometry.type === "BoxGeometry") {
+        const g = o.geometry.parameters, ax = longAxis(g.width, g.depth);
+        if (ax === "x") o.scale.x *= S;
+        else if (ax === "z") o.scale.z *= S;
+      }
+    }
+    for (const b of WALLS) { b.x1 *= S; b.x2 *= S; b.z1 *= S; b.z2 *= S; }
+    for (const b of OBSTACLES) {
+      const cx = (b.x1 + b.x2) / 2 * S, cz = (b.z1 + b.z2) / 2 * S;
+      let hx = (b.x2 - b.x1) / 2, hz = (b.z2 - b.z1) / 2;
+      const ax = longAxis(hx * 2, hz * 2);          // lo largo se estira igual que su malla
+      if (ax === "x") hx *= S; else if (ax === "z") hz *= S;
+      Object.assign(b, { x1: cx - hx, x2: cx + hx, z1: cz - hz, z2: cz + hz });
+    }
+    scene.userData.planScale = S;
+  }
+
+  /* ---------------- Medidas de lo nuevo (planta ya agrandada) ---------------- */
+  const UP = 3.6;            // altura del segundo piso
+  const UH = 3.0;            // alto de sus cuartos
+  const PATIO = { x1: 8.82, x2: 22, z1: 4.9, z2: 30.1 };
+  const RAMP = { x1: 8.95, x2: 10.5, z1: 12.6, z2: 21.0, low: 21.0, high: 12.6 };     // escalera exterior
+  const LANDING = { x1: 8.95, x2: 10.9, z1: 8.4, z2: 12.6 };                          // balcón del 2º piso
+
+  /* ============================================================
+     PATIO (al este del gran salón): fuente con estatua, setos secos,
+     árbol muerto, kiosco, bancas y la escalera al segundo piso
+     ============================================================ */
+  function buildPatio() {
+    const P = PATIO;
+    const ground = new THREE.MeshStandardMaterial({ map: tex(woodCanvas(), 1, 1), color: 0x3a3a2a, roughness: 1 });
+    floorPlane(P.x1, P.x2, P.z1, P.z2, 0, ground, 3);
+    const gravel = new THREE.MeshStandardMaterial({ color: 0x5d574c, roughness: 1 });
+    floorPlane(13.9, 17.1, P.z1, P.z2, 0.012, gravel, 2);
+    floorPlane(P.x1, P.x2, 23.2, 25.9, 0.012, gravel, 2);
+    const stoneW = M.brick;
+    // fachada de la casa vista desde el patio (tapa el interior desde afuera), con la
+    // puerta del salón (abajo) y la del segundo piso (arriba)
+    const FX1 = 8.62, FX2 = 8.82, FH = 7.0;
+    const doorZ = [23.8, 25.34], upZ = [10.0, 11.4];
+    wallBox(FX1, FX2, P.z1, upZ[0], FH, stoneW);
+    wallBox(FX1, FX2, upZ[0], upZ[1], UP, stoneW);
+    wallBox(FX1, FX2, upZ[0], upZ[1], FH - UP - 2.3, stoneW, UP + 2.3);
+    wallBox(FX1, FX2, upZ[1], doorZ[0], FH, stoneW);
+    wallBox(FX1, FX2, doorZ[0], doorZ[1], FH - 2.3, stoneW, 2.3);
+    wallBox(FX1, FX2, doorZ[1], P.z2, FH, stoneW);
+    // la fachada estorba en los dos pisos, salvo el tramo bajo la puerta del balcón
+    WALLS.filter((w) => w.x1 === FX1).forEach((w) => { w.f = w.z1 === upZ[0] ? 0 : -1; });
+    // muros del patio
+    wallBox(P.x2, P.x2 + 0.4, P.z1, P.z2, 4.5, stoneW);
+    wallBox(P.x1, P.x2 + 0.4, P.z1 - 0.4, P.z1, 4.5, stoneW);
+    wallBox(P.x1, P.x2 + 0.4, P.z2, P.z2 + 0.4, 4.5, stoneW);
+
+    // fuente con un ángel que llora
+    const FX = 15.5, FZ = 19.0;
+    cyl(1.6, 1.7, 0.55, M.stone, FX, 0.27, FZ, null, 28);
+    const water = new THREE.Mesh(new THREE.CircleGeometry(1.45, 28), new THREE.MeshStandardMaterial({ color: 0x0a1210, roughness: 0.05, metalness: 0.9 }));
+    water.rotation.x = -Math.PI / 2; water.position.set(FX, 0.5, FZ); scene.add(water);
+    cyl(0.25, 0.35, 1.2, M.stone, FX, 1.1, FZ, null, 12);
+    cyl(0.18, 0.28, 0.9, M.stone, FX, 2.15, FZ, null, 12);
+    sph(0.14, M.stone, FX, 2.72, FZ);
+    for (const sx of [-1, 1]) {
+      const wing = box(0.06, 0.9, 0.45, M.stone, FX + sx * 0.22, 2.35, FZ - 0.15);
+      wing.rotation.set(0.3, 0, sx * 0.5);
+    }
+    decal(bloodCanvas(8), 0.7, 0.4, FX, 2.7, FZ + 0.15, 0, 0);
+    OBSTACLES.push({ x1: FX - 1.75, x2: FX + 1.75, z1: FZ - 1.75, z2: FZ + 1.75 });
+
+    // setos secos
+    const hedge = new THREE.MeshStandardMaterial({ color: 0x1c2618, roughness: 1, flatShading: true });
+    for (const [x1, x2, z1, z2] of [[11, 13.4, 7, 7.9], [11, 11.9, 7, 21.8], [17.6, 20.8, 15.2, 16.1], [19.9, 20.8, 15.2, 22],
+      [11.6, 13.4, 27.5, 28.4], [17.6, 21.6, 27.5, 28.4], [17.6, 18.5, 6.8, 12.0]]) {
+      box(x2 - x1, 1.1, z2 - z1, hedge, (x1 + x2) / 2, 0.55, (z1 + z2) / 2);
+      OBSTACLES.push({ x1, x2, z1, z2 });
+    }
+    // árbol muerto con un columpio roto
+    const TX = 19.6, TZ = 25.6;
+    cyl(0.28, 0.42, 5.0, M.woodDark, TX, 2.5, TZ, null, 9);
+    for (const [ry, rz, y] of [[0.3, 0.9, 3.4], [2.2, 0.8, 3.9], [4.0, 1.0, 2.9], [5.2, 0.7, 4.4]]) {
+      const br = new THREE.Group(); br.position.set(TX, y, TZ); br.rotation.set(0, ry, rz); scene.add(br);
+      box(0.12, 2.2, 0.12, M.woodDark, 0, 1.1, 0, br);
+    }
+    for (const sz of [-0.3, 0.3]) cyl(0.008, 0.008, 2.4, M.cloth, TX - 1.3, 2.4, TZ + sz, null, 4);
+    const seat = box(0.6, 0.04, 0.25, M.woodMid, TX - 1.3, 1.15, TZ); seat.rotation.z = 0.35;
+    OBSTACLES.push({ x1: TX - 0.5, x2: TX + 0.5, z1: TZ - 0.5, z2: TZ + 0.5 });
+    // lápida de la familia
+    box(0.7, 0.9, 0.16, M.stone, 13.0, 0.45, 9.0).rotation.y = 0.15;
+    decal(writingCanvas("RAVENWOOD"), 0.6, 0.15, 13.0, 0.7, 9.09, 0, 0.15);
+    OBSTACLES.push({ x1: 12.55, x2: 13.45, z1: 8.8, z2: 9.2 });
+
+    // kiosco en ruinas con un farol
+    const KX = 19.6, KZ = 9.6;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2, px = KX + Math.cos(a) * 1.5, pz = KZ + Math.sin(a) * 1.5;
+      cyl(0.08, 0.08, 2.6, M.woodDark, px, 1.3, pz, null, 8);
+      OBSTACLES.push({ x1: px - 0.12, x2: px + 0.12, z1: pz - 0.12, z2: pz + 0.12 });
+    }
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(2.0, 1.2, 6), M.woodDark);
+    roof.position.set(KX, 3.2, KZ); roof.castShadow = true; scene.add(roof);
+    cyl(1.6, 1.6, 0.12, M.stone, KX, 0.06, KZ, null, 6);
+    cyl(0.07, 0.09, 0.22, M.brass, KX, 2.2, KZ);
+    flameMesh(1.2).position.set(KX, 2.24, KZ);
+    const lantern = new THREE.PointLight(0xffb060, 1.2, 9, 2);
+    lantern.position.set(KX, 2.1, KZ); scene.add(lantern);
+    flickers.push({ light: lantern, base: 1.2, soft: true });
+
+    // bancas
+    for (const [bx, bz, ry] of [[13.0, 14.2, Math.PI / 2], [18.2, 21.0, -Math.PI / 2]]) {
+      const g = new THREE.Group(); g.position.set(bx, 0, bz); g.rotation.y = ry; scene.add(g);
+      box(1.6, 0.06, 0.45, M.woodMid, 0, 0.45, 0, g);
+      box(1.6, 0.45, 0.06, M.woodMid, 0, 0.72, -0.2, g);
+      for (const lx of [-0.7, 0.7]) box(0.06, 0.45, 0.42, M.metal, lx, 0.22, 0, g);
+      OBSTACLES.push({ x1: bx - 0.35, x2: bx + 0.35, z1: bz - 0.85, z2: bz + 0.85 });
+    }
+
+    // luz de luna fría para todo el patio
+    const moonFill = new THREE.PointLight(0x8fa6d8, 1.6, 26, 1.5);
+    moonFill.position.set(16, 7, 17); scene.add(moonFill);
+
+    // escalera de piedra al balcón del segundo piso
+    const R = RAMP, steps = 16, run = (R.low - R.high) / steps;
+    for (let i = 0; i < steps; i++) {
+      const top = UP * (i + 1) / steps;
+      box(R.x2 - R.x1, top, run, M.stone, (R.x1 + R.x2) / 2, top / 2, R.low - run * (i + 0.5));
+    }
+    // barandal del lado del patio (sirve en los dos pisos)
+    wallBox(R.x2, R.x2 + 0.12, R.z1, R.z2, 0.1, M.metal, 0);
+    WALLS[WALLS.length - 1].f = -1;
+    const railLen = Math.hypot(R.low - R.high, UP);
+    const rail = box(0.06, 0.06, railLen, M.metal, R.x2 + 0.06, UP / 2 + 0.95, (R.low + R.high) / 2);
+    rail.rotation.x = Math.atan2(UP, R.low - R.high);
+    for (let i = 0; i <= 8; i++) {
+      const z = R.low - (R.low - R.high) * i / 8, y = UP * i / 8;
+      cyl(0.02, 0.02, 0.95, M.metal, R.x2 + 0.06, y + 0.47, z, null, 5);
+    }
+    // debajo del extremo alto no se entra desde el patio
+    OBSTACLES.push({ x1: R.x1, x2: R.x2, z1: R.high - 0.35, z2: R.high, f: 0 });
+
+    // balcón: piso, columnas y barandal
+    const L = LANDING;
+    box(L.x2 - L.x1, 0.2, L.z2 - L.z1, M.stone, (L.x1 + L.x2) / 2, UP - 0.1, (L.z1 + L.z2) / 2);
+    for (const [x, z] of [[L.x2 - 0.15, L.z1 + 0.15], [L.x2 - 0.15, L.z2 - 0.15], [L.x1 + 0.3, L.z1 + 0.15]]) {
+      cyl(0.13, 0.15, UP, M.stone, x, UP / 2, z, null, 10);
+      OBSTACLES.push({ x1: x - 0.2, x2: x + 0.2, z1: z - 0.2, z2: z + 0.2, f: 0 });
+    }
+    for (const [x1, x2, z1, z2] of [[L.x2 - 0.08, L.x2 + 0.04, L.z1, L.z2], [L.x1, L.x2, L.z1 - 0.04, L.z1 + 0.08], [R.x2, L.x2, L.z2 - 0.08, L.z2 + 0.04]]) {
+      box(x2 - x1, 1.0, z2 - z1, M.metal, (x1 + x2) / 2, UP + 0.5, (z1 + z2) / 2).material = M.metal;
+      WALLS.push({ x1, x2, z1, z2, f: 1 });
+    }
+  }
+
+  /* ============================================================
+     SEGUNDO PISO (encima de biblioteca, pasillo y cocina):
+     pasillo, recámara principal, cuarto de los niños, baño y
+     cuarto de trastos. Se sube por la escalera del patio.
+     ============================================================ */
+  function buildUpperFloor() {
+    const T = 0.2;
+    const uWall = (x1, x2, z1, z2, mat = M.wall, h = UH, y0 = 0) => {
+      wallBox(x1, x2, z1, z2, h, mat, UP + y0);
+      if (y0 < 1.5) WALLS.push({ x1, x2, z1, z2, f: 1 });
     };
+    const uOb = (x1, x2, z1, z2) => OBSTACLES.push({ x1, x2, z1, z2, f: 1 });
+    const uWallX = (z, x1, x2, gaps = [], mat) => {
+      let x = x1;
+      for (const [g1, g2] of gaps) {
+        if (g1 > x) uWall(x, g1, z - T / 2, z + T / 2, mat);
+        uWall(g1, g2, z - T / 2, z + T / 2, mat, UH - 2.3, 2.3);
+        x = g2;
+      }
+      if (x < x2) uWall(x, x2, z - T / 2, z + T / 2, mat);
+    };
+    const uWallZ = (x, z1, z2, gaps = [], mat) => {
+      let z = z1;
+      for (const [g1, g2] of gaps) {
+        if (g1 > z) uWall(x - T / 2, x + T / 2, z, g1, mat);
+        uWall(x - T / 2, x + T / 2, g1, g2, mat, UH - 2.3, 2.3);
+        z = g2;
+      }
+      if (z < z2) uWall(x - T / 2, x + T / 2, z, z2, mat);
+    };
+    const room = (x1, x2, z1, z2, floorMat = M.floor) => {
+      floorPlane(x1, x2, z1, z2, UP, floorMat, 3);
+      floorPlane(x1, x2, z1, z2, UP + UH, M.ceiling, 3, true);
+    };
+    const ub = (w, h, d, mat, x, y, z) => box(w, h, d, mat, x, UP + y, z);
+    const ulight = (color, inten, dist, x, y, z, flick) => {
+      const l = new THREE.PointLight(color, inten, dist, 2);
+      l.position.set(x, UP + y, z); scene.add(l);
+      if (flick) flickers.push({ light: l, base: inten, ...flick });
+      return l;
+    };
+
+    // piso y techo de todo el segundo piso
+    room(-8.4, 8.4, 4.9, 16.1);
+    // muros exteriores (la puerta este da al balcón)
+    uWallZ(-8.4, 4.8, 16.2);
+    uWallZ(8.4, 4.8, 16.2, [[10.0, 11.4]]);
+    uWallX(4.9, -8.5, 8.5);
+    uWallX(16.1, -8.5, 8.5);
+    // pasillo central (z 9.4 .. 11.6) con puertas a los cuatro cuartos
+    uWallX(9.4, -8.3, 8.3, [[-5.6, -4.4], [2.4, 3.6]]);
+    uWallX(11.6, -8.3, 8.3, [[-4.6, -3.4], [3.4, 4.6]]);
+    uWallZ(0, 11.7, 16.0);
+    uWallZ(-2.0, 5.0, 9.3);
+    // pasillo: alfombra, retratos y un candelabro
+    ub(15.4, 0.012, 1.1, M.runner, 0, 0.006, 10.5);
+    portrait(0.8, 1.0, -6.5, UP + 1.6, 11.48, Math.PI, 0.05);
+    portrait(0.8, 1.0, 1.0, UP + 1.6, 9.52, 0, -0.04);
+    portrait(0.7, 0.9, 6.2, UP + 1.6, 11.48, Math.PI, 0);
+    ulight(0xffc890, 1.1, 9, 0, 2.3, 10.5, { soft: true });
+    decal(writingCanvas("NO ABRAS EL CUARTO DE LOS NIÑOS"), 3.4, 0.6, 4.0, UP + 1.9, 11.48, 0, Math.PI);
+
+    // ---------- recámara principal (oeste, norte) ----------
+    const bx = -5.2, bz = 14.2;
+    ub(2.0, 0.5, 2.3, M.woodDark, bx, 0.25, bz);                       // cama de cuatro postes
+    ub(1.9, 0.18, 2.2, new THREE.MeshStandardMaterial({ color: 0x5a1a18, roughness: 0.9 }), bx, 0.59, bz);
+    ub(1.9, 0.6, 0.12, M.woodDark, bx, 0.9, bz + 1.12);
+    for (const [px, pz] of [[-0.95, -1.1], [0.95, -1.1], [-0.95, 1.1], [0.95, 1.1]]) ub(0.08, 2.3, 0.08, M.woodDark, bx + px, 1.15, bz + pz);
+    ub(2.0, 0.06, 2.3, M.woodDark, bx, 2.3, bz);
+    decal(bloodCanvas(9), 1.4, 1.4, bx + 0.2, UP + 0.69, bz - 0.2, -Math.PI / 2, 0, 0.5);
+    uOb(bx - 1.05, bx + 1.05, bz - 1.2, bz + 1.2);
+    ub(1.2, 2.2, 0.6, M.woodMid, -7.8, 1.1, 12.9).rotation.y = Math.PI / 2;   // ropero
+    uOb(-8.25, -7.45, 12.25, 13.55);
+    ub(1.4, 0.85, 0.5, M.woodDark, -1.4, 0.42, 15.6);                  // tocador con espejo roto
+    const mirror = ub(0.8, 1.0, 0.03, new THREE.MeshStandardMaterial({ color: 0x9aa4a8, metalness: 0.95, roughness: 0.15 }), -1.4, 1.5, 15.82);
+    mirror.castShadow = false;
+    uOb(-2.15, -0.65, 15.3, 15.95);
+    ulight(0xffb070, 0.9, 7, -3.5, 2.2, 13.8, { soft: true });
+
+    // ---------- cuarto de los niños (este, norte) ----------
+    const crib = { x: 3.4, z: 14.6 };
+    ub(1.3, 0.08, 0.75, M.woodMid, crib.x, 0.55, crib.z);
+    for (let i = 0; i <= 10; i++) ub(0.03, 0.6, 0.03, M.woodMid, crib.x - 0.63 + i * 0.126, 0.85, crib.z - 0.36);
+    for (let i = 0; i <= 10; i++) ub(0.03, 0.6, 0.03, M.woodMid, crib.x - 0.63 + i * 0.126, 0.85, crib.z + 0.36);
+    for (const sx of [-0.65, 0.65]) ub(0.05, 1.2, 0.75, M.woodMid, crib.x + sx, 0.6, crib.z);
+    uOb(crib.x - 0.75, crib.x + 0.75, crib.z - 0.45, crib.z + 0.45);
+    // caballito mecedor
+    const horse = new THREE.Group(); horse.position.set(6.2, UP, 13.0); horse.rotation.y = -0.6; scene.add(horse);
+    box(0.25, 0.3, 0.7, M.woodMid, 0, 0.6, 0, horse);
+    box(0.18, 0.35, 0.22, M.woodMid, 0, 0.85, 0.38, horse);
+    const rocker = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.03, 6, 20, Math.PI * 0.6), M.woodDark);
+    rocker.rotation.set(0, Math.PI / 2, Math.PI + 0.94); rocker.position.y = 0.6; horse.add(rocker);
+    uOb(5.8, 6.6, 12.5, 13.5);
+    // muñecas sentadas en un estante, mirando
+    ub(2.2, 0.05, 0.35, M.woodDark, 6.9, 1.4, 15.8);
+    for (let i = 0; i < 5; i++) {
+      const dx = 5.95 + i * 0.45;
+      ub(0.16, 0.2, 0.12, new THREE.MeshStandardMaterial({ color: [0x7a2a3a, 0x2a4a6a, 0xd8d0c0, 0x3a5a3a, 0x6a2a2a][i], roughness: 0.9 }), dx, 1.53, 15.8);
+      const head = sph(0.075, new THREE.MeshStandardMaterial({ color: 0xe8dcc8, roughness: 0.5 }), dx, UP + 1.72, 15.8);
+      head.rotation.y = Math.PI + (i - 2) * 0.3;
+    }
+    ub(0.9, 0.5, 0.5, M.woodMid, 7.6, 0.25, 12.4);                     // baúl de juguetes
+    uOb(7.15, 8.05, 12.15, 12.65);
+    ulight(0xc8d8ff, 0.7, 7, 4.5, 2.0, 13.8, { phase: 1.3 });
+    decal(writingCanvas("JUEGA CONMIGO"), 2.0, 0.5, 4.5, UP + 1.8, 15.98, 0, Math.PI);
+
+    // ---------- baño (oeste, sur) ----------
+    const tile = new THREE.MeshStandardMaterial({ map: tex(tileCanvas(), 3, 3), roughness: 0.5 });
+    floorPlane(-8.3, -2.1, 5.0, 9.3, UP + 0.005, tile, 1.5);
+    const tub = new THREE.Group(); tub.position.set(-6.4, UP, 6.4); scene.add(tub);
+    const tubM = new THREE.MeshStandardMaterial({ color: 0xe8e4da, roughness: 0.3 });
+    box(1.7, 0.55, 0.8, tubM, 0, 0.45, 0, tub);
+    const blood = box(1.5, 0.02, 0.6, new THREE.MeshStandardMaterial({ color: 0x3a0000, roughness: 0.1, metalness: 0.2 }), 0, 0.7, 0, tub);
+    blood.castShadow = false;
+    for (const [fx, fz] of [[-0.7, -0.3], [0.7, -0.3], [-0.7, 0.3], [0.7, 0.3]]) cyl(0.05, 0.03, 0.18, M.brass, fx, 0.09, fz, tub);
+    uOb(-7.3, -5.5, 5.95, 6.85);
+    decal(bloodCanvas(10), 1.6, 1.6, -5.2, UP + 0.012, 7.4, -Math.PI / 2, 0, 2.0);
+    ub(0.6, 0.85, 0.45, tubM, -2.7, 0.42, 8.95);                       // lavabo y espejo
+    const bmirror = ub(0.6, 0.8, 0.03, new THREE.MeshStandardMaterial({ color: 0x9aa4a8, metalness: 0.95, roughness: 0.15 }), -2.7, 1.55, 9.27);
+    bmirror.castShadow = false;
+    decal(writingCanvas("DETRÁS DE TI"), 0.55, 0.18, -2.7, UP + 1.55, 9.25, 0, Math.PI);
+    uOb(-3.05, -2.35, 8.7, 9.3);
+    const bulb = sph(0.06, new THREE.MeshBasicMaterial({ color: 0xfff0d0 }), -5.2, UP + 2.6, 7.2);
+    ulight(0xfff0d0, 0.9, 7, -5.2, 2.5, 7.2, { bulb, phase: 4.1 });
+
+    // ---------- cuarto de trastos (este, sur): muebles tapados y maniquíes ----------
+    const sheet = new THREE.MeshStandardMaterial({ color: 0xcfcabd, roughness: 1 });
+    for (const [x, z, w, h, d] of [[0.2, 6.2, 1.8, 1.0, 0.9], [3.2, 5.8, 1.2, 1.6, 0.7], [6.6, 6.3, 2.0, 0.8, 1.0], [5.2, 8.4, 0.9, 1.3, 0.9]]) {
+      ub(w, h, d, sheet, x, h / 2, z);
+      uOb(x - w / 2 - 0.05, x + w / 2 + 0.05, z - d / 2 - 0.05, z + d / 2 + 0.05);
+    }
+    for (const [x, z, ry] of [[1.6, 8.5, 0.4], [7.6, 8.3, -0.8], [-1.2, 7.4, 1.2]]) {
+      const mq = new THREE.Group(); mq.position.set(x, UP, z); mq.rotation.y = ry; scene.add(mq);
+      const plastic = new THREE.MeshStandardMaterial({ color: 0xd8cfc0, roughness: 0.6 });
+      cyl(0.02, 0.15, 0.05, M.woodDark, 0, 0.03, 0, mq);
+      cyl(0.02, 0.02, 0.9, M.woodDark, 0, 0.5, 0, mq);
+      cyl(0.17, 0.13, 0.65, plastic, 0, 1.25, 0, mq);
+      sph(0.11, plastic, 0, 1.72, 0, mq);
+      uOb(x - 0.22, x + 0.22, z - 0.22, z + 0.22);
+    }
+    ub(0.9, 0.5, 0.55, M.woodDark, 7.6, 0.25, 5.5);                     // baúl
+    uOb(7.1, 8.1, 5.2, 5.8);
+    ulight(0xffd8a0, 0.6, 6, 3.5, 2.3, 7.0, { phase: 2.7 });
+  }
+
+  // datos del nivel: la planta original crece S veces y se agregan patio y 2º piso
+  function finishMansion(S, d) {
+    const sc = (v) => V3(v.x * S, v.y || 0, v.z * S);
+    const at = (o) => ({ ...o, x: o.x * S, z: o.z * S });
+    d.bounds = { x1: HALL.x1 * S, x2: PATIO.x2, z1: -ROOM.d / 2 * S, z2: HALL.z2 * S };
+    d.camZones = d.camZones.map((z) => ({ ...z, x1: z.x1 * S, x2: z.x2 * S, z1: z.z1 * S, z2: z.z2 * S })).concat([
+      { x1: 9.1, x2: 21.75, z1: 5.15, z2: 29.85, h: 6.8 },                        // patio (y el balcón)
+      { x1: 7.9, x2: 9.3, z1: 23.95, z2: 25.2, h: 2.1 },                          // puerta salón → patio
+      { x1: -8.05, x2: 8.05, z1: 9.65, z2: 11.35, y0: UP, h: UP + UH - 0.2 },     // pasillo de arriba
+      { x1: -8.05, x2: -0.3, z1: 11.85, z2: 15.75, y0: UP, h: UP + UH - 0.2 },    // recámara
+      { x1: 0.3, x2: 8.05, z1: 11.85, z2: 15.75, y0: UP, h: UP + UH - 0.2 },      // cuarto de los niños
+      { x1: -8.05, x2: -2.3, z1: 5.25, z2: 9.15, y0: UP, h: UP + UH - 0.2 },      // baño
+      { x1: -1.7, x2: 8.05, z1: 5.25, z2: 9.15, y0: UP, h: UP + UH - 0.2 },       // trastos
+      { x1: -5.5, x2: -4.5, z1: 8.9, z2: 9.9, y0: UP, h: UP + 2.1 },
+      { x1: 2.5, x2: 3.5, z1: 8.9, z2: 9.9, y0: UP, h: UP + 2.1 },
+      { x1: -4.5, x2: -3.5, z1: 11.1, z2: 12.1, y0: UP, h: UP + 2.1 },
+      { x1: 3.5, x2: 4.5, z1: 11.1, z2: 12.1, y0: UP, h: UP + 2.1 },
+      { x1: 7.9, x2: 9.4, z1: 10.15, z2: 11.25, y0: UP, h: UP + 2.1 },             // puerta al balcón
+    ]);
+    d.floorY = UP;
+    d.ramps = [RAMP];
+    d.upper = [{ x1: -8.25, x2: 8.25, z1: 5.05, z2: 15.95 }, { x1: 8.25, x2: LANDING.x2, z1: LANDING.z1, z2: LANDING.z2 }];
+    d.spawn.survivor.pos = sc(d.spawn.survivor.pos);
+    d.spawn.monster.pos = sc(d.spawn.monster.pos);
+    const path = d.npcPath.map(sc);
+    // vuelta por el patio y el segundo piso, desde el ala este del salón
+    const tour = [[7.0, 0, 24.6], [11, 0, 24.6], [13, 0, 28.8], [21, 0, 27], [21, 0, 13.5], [14.5, 0, 11.5], [12.5, 0, 22.4],
+      [9.7, 0, 21.8], [9.9, UP, 10.7], [6.5, UP, 10.5], [4.0, UP, 13.0], [1.0, UP, 10.5], [-3.2, UP, 12.7], [-5.0, UP, 10.5],
+      [-5.0, UP, 7.8], [3.0, UP, 10.5], [3.0, UP, 7.2], [6.5, UP, 10.5], [9.9, UP, 10.7], [9.7, 0, 21.8], [12.5, 0, 24.6], [7.0, 0, 24.6]]
+      .map(([x, y, z]) => V3(x, y, z));
+    let at0 = path.findIndex((p) => Math.abs(p.x - 2.4 * S) < 0.01 && Math.abs(p.z - 16.0 * S) < 0.01);
+    if (at0 < 0) at0 = path.length - 1;
+    path.splice(at0 + 1, 0, ...tour);
+    if (d.npcStart > at0) d.npcStart += tour.length;
+    d.npcPath = path;
+    d.items = d.items.map(at);
+    // una reliquia sube al cuarto de los niños y otra sale al patio
+    const ki = d.items.findIndex((i) => i.kind === "relic" && i.x > 5);
+    const kitchenRelic = d.items.splice(ki, 1)[0];
+    const hi = d.items.findIndex((i) => i.kind === "relic" && i.z > 25);
+    const hallRelic = d.items.splice(hi, 1)[0];
+    d.items.push(
+      { kind: "relic", x: 5.0, z: 14.9, y: UP },                          // junto a la cuna
+      { kind: "relic", x: 15.5, z: 21.4 },                                // al pie de la fuente
+      { kind: "battery", x: 6.6, z: 7.6, y: UP, skip: ["blackout"] },     // trastos
+      { kind: "medkit", x: -3.6, z: 6.2, y: UP },                         // baño
+      { kind: "holywater", x: -1.6, z: 12.6, y: UP, skip: ["blackout"] }, // recámara
+      { kind: "battery", x: 20.6, z: 6.4 },                               // rincón del patio
+    );
+    d.spots = d.spots.map(at).concat([
+      { x: kitchenRelic.x, z: kitchenRelic.z }, { x: hallRelic.x, z: hallRelic.z },
+      { x: 20.8, z: 29 }, { x: 10.2, z: 6.0 }, { x: 12.5, z: 26.5 },
+      { x: -7.0, z: 15.2, y: UP }, { x: 7.6, z: 10.5, y: UP }, { x: -7.4, z: 8.4, y: UP }, { x: 1.0, z: 12.6, y: UP },
+    ]);
+    d.exit = at(d.exit);
+    return d;
   }
 
   function updateMansion(dt, t) {
@@ -2491,7 +2931,7 @@ const Scene3D = (() => {
   function nearestItem() {
     let best = null, bd = 1.25;
     for (const it of G.items) {
-      if (it.taken) continue;
+      if (it.taken || Math.abs(player.pos.y - (it.y || 0)) > 1.5) continue;   // solo en tu piso
       const d = Math.hypot(player.pos.x - it.x, player.pos.z - it.z);
       if (d < bd) { bd = d; best = it; }
     }
@@ -2548,7 +2988,7 @@ const Scene3D = (() => {
   // Supervivencia: cada reliquia recogida aparece otra en un punto lejano
   function spawnSurvivalRelic() {
     const spots = LV.items.concat(LV.spots || []);
-    const free = spots.filter((s) => Math.hypot(s.x - player.pos.x, s.z - player.pos.z) > 6 &&
+    const free = spots.filter((s) => Math.hypot(s.x - player.pos.x, s.z - player.pos.z, (s.y || 0) - player.pos.y) > 6 &&
       !G.items.some((it) => !it.taken && Math.hypot(it.x - s.x, it.z - s.z) < 0.5));
     const pool = free.length ? free : spots;
     const s = pool[Math.floor(Math.random() * pool.length)];
@@ -2973,12 +3413,18 @@ const Scene3D = (() => {
 
   // a dónde caminar para llegar a `target`: directo si se puede, si no por la ruta
   function steer(o, target, dt) {
+    // subiendo o bajando una escalera: sigue hasta el otro extremo sin recalcular
+    if (o.rampGoal) {
+      if (o.pos.distanceTo(o.rampGoal) < 0.5 || (!rampAt(o.pos) && floorOf(o.pos.y) === floorOf(o.rampGoal.y))) o.rampGoal = null;
+      else return o.rampGoal;
+    }
     if (clearPath(o.pos, target)) { o.navGoal = null; return target; }
     o.navT -= dt;
     if (!o.navGoal || o.navT <= 0 || o.pos.distanceTo(o.navGoal) < 0.4 || o.navTarget.distanceTo(target) > 1) {
       o.navGoal = routeNext(o.pos, target);
       o.navTarget.copy(target);
       o.navT = 0.5;
+      if (o.navGoal && o.navGoal.rampEnd && floorOf(o.navGoal.y) !== floorOf(o.pos.y)) o.rampGoal = o.navGoal;
     }
     return o.navGoal || target;
   }
@@ -3130,7 +3576,7 @@ const Scene3D = (() => {
       _camTry.lerpVectors(_target, _camPos, i / 16);
       const z = camZone(_camTry);
       if (!z) break;
-      _camTry.y = Math.min(_camTry.y, z.h);
+      _camTry.y = Math.max(Math.min(_camTry.y, z.h), (z.y0 || 0) + 0.35);
       _camStep.copy(_camTry);
     }
     _camPos.copy(_camStep);
