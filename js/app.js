@@ -166,8 +166,8 @@
   }
   function resetMultiplayerScreen() {
     codeBox.textContent = "— — — —";
-    setStatus(hostStatus, "Serás <b>superviviente</b>. El primero en unirse es el monstruo; hasta 2 más entran como supervivientes.");
-    setStatus(joinStatus, "Si la sala aún no tiene monstruo, lo serás tú; si ya lo tiene, entras como <b>superviviente</b>.");
+    setStatus(hostStatus, "Hasta 4 jugadores. Al comenzar se sortea quién es el <b>monstruo</b>; los demás son <b>supervivientes</b>.");
+    setStatus(joinStatus, "Los roles se sortean cuando el anfitrión comienza la partida.");
     $("mp-scenario").disabled = $("mp-difficulty").disabled = false;
     $("mp-lobby").hidden = true;
   }
@@ -184,24 +184,25 @@
     $("mp-lobby-code").textContent = i.code;
     $("mp-lobby-info").textContent = settingsLabel(i.settings);
     const all = [{ id: i.id, role: i.role, name: playerName() || "Tú" }].concat(i.peers)
-      .sort((a, b) => (a.role === "monster") - (b.role === "monster") || a.id - b.id);
+      .sort((a, b) => a.id - b.id);
     const rows = all.map((p) => {
-      const tag = p.role === "monster" ? '<span class="tag tag-monster">Monstruo</span>' : '<span class="tag tag-survivor">Superviviente</span>';
+      const tag = p.role === "monster" ? '<span class="tag tag-monster">Monstruo</span>'
+        : p.role === "survivor" ? '<span class="tag tag-survivor">Superviviente</span>'
+        : '<span class="tag">Por sortear</span>';
       const marks = [p.id === i.id ? "tú" : "", p.id === i.host ? "anfitrión" : ""].filter(Boolean).join(" · ");
       return `<li class="${p.id === i.id ? "me" : ""}">${tag}<span class="who">${esc(p.name || "Jugador")}</span><span class="badge">${marks}</span></li>`;
     });
     for (let k = all.length; k < MAX_MP; k++) {
-      const hasMonster = all.some((p) => p.role === "monster");
-      rows.push(`<li class="empty">${!hasMonster && k === all.length ? "Esperando al monstruo…" : "Lugar libre para un superviviente"}</li>`);
+      rows.push(`<li class="empty">${all.length < 2 && k === all.length ? "Esperando a otro jugador…" : "Lugar libre"}</li>`);
     }
     $("mp-players").innerHTML = rows.join("");
-    const ready = all.some((p) => p.role === "monster") && all.some((p) => p.role === "survivor");
+    const ready = all.length >= 2;     // mínimo un monstruo y un superviviente (los sortea el servidor)
     const host = Net.isHost;
     $("mp-start").hidden = !host;
     $("mp-start").disabled = !ready;
     setStatus($("mp-lobby-status"), host
-      ? (ready ? `Listos ${all.length} de ${MAX_MP}. Comienza cuando quieras (pueden entrar más hasta que comience).`
-               : "Comparte el código. Hace falta que entre el monstruo para comenzar.")
+      ? (ready ? `Listos ${all.length} de ${MAX_MP}. Al comenzar se sortea quién es el monstruo (pueden entrar más hasta entonces).`
+               : "Comparte el código. Hace falta al menos otro jugador para comenzar.")
       : "Esperando a que el anfitrión comience la partida…", ready || !host ? "ok" : "");
   }
   function startMultiplayer() {
@@ -266,8 +267,7 @@
   Net.on("peer-leave", () => { if (currentId === "screen-multiplayer") renderLobby(); });
   Net.on("host", () => { if (currentId === "screen-multiplayer") renderLobby(); });
   Net.on("joined", (m) => {
-    const role = m.role === "monster" ? "el <b>monstruo</b>" : "<b>superviviente</b>";
-    setStatus(joinStatus, `Dentro de la sala <b>${m.code}</b>: eres ${role}.`, "ok");
+    setStatus(joinStatus, `Dentro de la sala <b>${m.code}</b>. Los roles se sortean al comenzar.`, "ok");
     renderLobby();
   });
   Net.on("start", () => {

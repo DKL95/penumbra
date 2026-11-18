@@ -12,6 +12,8 @@ const { spawn } = require("node:child_process");
 const net = require("node:net");
 const path = require("node:path");
 const WebSocket = require("ws");
+const Rules = require("../js/rules.js");
+const DEFAULT_LOOK = Rules.defaultLook();
 
 let serverProc;
 let PORT;
@@ -174,10 +176,10 @@ test("event: los eventos de partida (recoger, golpe, agua bendita, fin) llegan a
   assert.equal((await waitFor(guest, "event")).d.result, "escaped");
 });
 
-test("crear sala: código de 4 letras y rol superviviente", async () => {
+test("crear sala: código de 4 letras y rol por sortear", async () => {
   const { msg } = await createRoom();
   assert.match(msg.code, /^[A-HJ-NP-Z2-9]{4}$/);
-  assert.equal(msg.role, "survivor");
+  assert.equal(msg.role, null);
   assert.equal(typeof msg.id, "number");
 });
 
@@ -188,17 +190,17 @@ test("cada sala recibe un código distinto", async () => {
 });
 
 /* ---------------- unirse ---------------- */
-test("unirse: el 2º jugador es el monstruo y ambos se ven", async () => {
+test("unirse: en la sala de espera nadie tiene rol y ambos se ven", async () => {
   const host = await createRoom("Ana");
   const guest = await joinRoom(host.msg.code, "Beto");
 
   assert.equal(guest.msg.t, "joined");
-  assert.equal(guest.msg.role, "monster");
+  assert.equal(guest.msg.role, null);
   assert.equal(guest.msg.code, host.msg.code);
-  assert.deepEqual(guest.msg.peers, [{ id: host.msg.id, role: "survivor", name: "Ana" }]);
+  assert.deepEqual(guest.msg.peers, [{ id: host.msg.id, role: null, name: "Ana", look: DEFAULT_LOOK }]);
 
   const pj = await waitFor(host.ws, "peer-join");
-  assert.deepEqual(pj, { t: "peer-join", id: guest.msg.id, role: "monster", name: "Beto" });
+  assert.deepEqual(pj, { t: "peer-join", id: guest.msg.id, role: null, name: "Beto", look: DEFAULT_LOOK });
 });
 
 test("unirse con código en minúsculas funciona", async () => {
@@ -213,29 +215,27 @@ test("unirse a una sala inexistente da error", async () => {
   assert.match(guest.msg.msg, /No existe/);
 });
 
-test("hasta 4 jugadores: 1 monstruo y 3 supervivientes; el 5º no entra", async () => {
+test("hasta 4 jugadores; el 5º no entra", async () => {
   const host = await createRoom();
-  const roles = [];
-  for (let i = 0; i < 3; i++) roles.push((await joinRoom(host.msg.code, "J" + i)).msg.role);
-  assert.deepEqual(roles, ["monster", "survivor", "survivor"]);
+  for (let i = 0; i < 3; i++) assert.equal((await joinRoom(host.msg.code, "J" + i)).msg.t, "joined");
   const fifth = await joinRoom(host.msg.code);
   assert.equal(fifth.msg.t, "error");
   assert.match(fifth.msg.msg, /llena/);
 });
 
-test("el 4º jugador ve a los otros 3 con sus roles", async () => {
+test("el 4º jugador ve a los otros 3 (aún sin rol)", async () => {
   const host = await createRoom("Ana");
   await joinRoom(host.msg.code, "Beto");
   await joinRoom(host.msg.code, "Ceci");
   const g3 = await joinRoom(host.msg.code, "Dani");
-  assert.deepEqual(g3.msg.peers.map((p) => [p.name, p.role]), [["Ana", "survivor"], ["Beto", "monster"], ["Ceci", "survivor"]]);
+  assert.deepEqual(g3.msg.peers.map((p) => [p.name, p.role]), [["Ana", null], ["Beto", null], ["Ceci", null]]);
   assert.equal(g3.msg.host, host.msg.id);
 });
 
-test("start: solo el anfitrión, con monstruo y superviviente; avisa a todos con la lista", async () => {
+test("start: solo el anfitrión y con 2+ jugadores; sortea 1 monstruo y avisa a todos", async () => {
   const host = await createRoom("Ana");
   sendMsg(host.ws, { t: "start" });
-  assert.match((await waitFor(host.ws, "error")).msg, /monstruo/);
+  assert.match((await waitFor(host.ws, "error")).msg, /al menos 2 jugadores/);
   const g1 = await joinRoom(host.msg.code, "Beto");
   const g2 = await joinRoom(host.msg.code, "Ceci");
   sendMsg(g1.ws, { t: "start" });           // un invitado no puede comenzar
@@ -246,6 +246,20 @@ test("start: solo el anfitrión, con monstruo y superviviente; avisa a todos con
     assert.equal(st.players.length, 3);
     assert.deepEqual(st.players.map((p) => p.role).sort(), ["monster", "survivor", "survivor"]);
   }
+});
+
+test("el sorteo es al azar: a veces el anfitrión es el monstruo y a veces el invitado", async () => {
+  const monsters = new Set();
+  for (let i = 0; i < 24 && monsters.size < 2; i++) {
+    const host = await createRoom("Ana");
+    await joinRoom(host.msg.code, "Beto");
+    sendMsg(host.ws, { t: "start" });
+    const st = await waitFor(host.ws, "start");
+    assert.equal(st.players.filter((p) => p.role === "monster").length, 1);
+    assert.equal(st.players.filter((p) => p.role === "survivor").length, 1);
+    monsters.add(st.players.find((p) => p.role === "monster").name);
+  }
+  assert.deepEqual([...monsters].sort(), ["Ana", "Beto"]);
 });
 
 test("una partida ya empezada no acepta más jugadores", async () => {
@@ -376,7 +390,7 @@ test("leave: el otro jugador recibe peer-leave", async () => {
   const guest = await joinRoom(host.msg.code);
   sendMsg(guest.ws, { t: "leave" });
   assert.deepEqual(await waitFor(host.ws, "peer-leave"),
-    { t: "peer-leave", id: guest.msg.id, role: "monster" });
+    { t: "peer-leave", id: guest.msg.id, role: null });
 });
 
 test("cerrar la pestaña (desconexión) avisa al otro jugador", async () => {
@@ -384,26 +398,28 @@ test("cerrar la pestaña (desconexión) avisa al otro jugador", async () => {
   const guest = await joinRoom(host.msg.code);
   await close(host.ws);
   const pl = await waitFor(guest.ws, "peer-leave");
-  assert.equal(pl.role, "survivor");
+  assert.equal(pl.id, host.msg.id);
 });
 
-test("tras salir el monstruo, otro jugador puede ocupar su lugar", async () => {
+test("en partida, quien se va avisa con el rol que le tocó", async () => {
+  const host = await createRoom();
+  const guest = await joinRoom(host.msg.code);
+  sendMsg(host.ws, { t: "start" });
+  const st = await waitFor(guest.ws, "start");
+  await waitFor(host.ws, "start");
+  const hostRole = st.players.find((p) => p.id === host.msg.id).role;
+  await close(host.ws);
+  assert.equal((await waitFor(guest.ws, "peer-leave")).role, hostRole);
+});
+
+test("si alguien sale de la sala de espera, puede entrar otro en su lugar", async () => {
   const host = await createRoom();
   const g1 = await joinRoom(host.msg.code);
   await close(g1.ws);
   await waitFor(host.ws, "peer-leave");
   const g2 = await joinRoom(host.msg.code);
   assert.equal(g2.msg.t, "joined");
-  assert.equal(g2.msg.role, "monster");
-});
-
-test("si sale el superviviente, quien entra después es superviviente", async () => {
-  const host = await createRoom();
-  const g1 = await joinRoom(host.msg.code);
-  await close(host.ws);
-  await waitFor(g1.ws, "peer-leave");
-  const g2 = await joinRoom(host.msg.code);
-  assert.equal(g2.msg.role, "survivor");
+  assert.equal(g2.msg.peers.length, 1);
 });
 
 test("una sala vacía se elimina", async () => {
@@ -434,4 +450,33 @@ test("unirse a tu propia sala no te deja en una sala fantasma", async () => {
   assert.equal(guest.msg.t, "joined", "la sala desapareció: " + JSON.stringify(guest.msg));
   sendMsg(host.ws, { t: "state", p: [1, 2, 3], r: 0, a: 0 });
   await waitFor(guest.ws, "state");
+});
+
+/* ---------------- personalización ---------------- */
+test("la personalización de cada jugador llega a los demás (unirse y start)", async () => {
+  const lookA = { survivorColor: "carmesi", flashColor: "azul", monsterType: "demonio", monsterSkin: "hueso", monsterEyes: "rojo", hat: "copa" };
+  const lookB = { survivorColor: "noche", flashColor: "roja", monsterType: "llorona", monsterSkin: "sangre", monsterEyes: "verde", hat: "cuernos" };
+  const a = await connect();
+  sendMsg(a, { t: "create", name: "Ana", look: lookA });
+  const created = await waitFor(a, "created");
+  const b = await connect();
+  sendMsg(b, { t: "join", code: created.code, name: "Beto", look: lookB });
+  const joined = await waitFor(b, "joined");
+  assert.deepEqual(joined.peers[0].look, lookA);                 // Beto ve cómo se ve Ana
+  assert.deepEqual((await waitFor(a, "peer-join")).look, lookB); // Ana ve cómo se ve Beto
+  sendMsg(a, { t: "start" });
+  const st = await waitFor(b, "start");
+  assert.deepEqual(st.players.find((p) => p.name === "Ana").look, lookA);
+  assert.deepEqual(st.players.find((p) => p.name === "Beto").look, lookB);
+});
+
+test("personalización inválida: el servidor deja solo ids conocidos", async () => {
+  const a = await connect();
+  sendMsg(a, { t: "create", name: "Ana", look: { survivorColor: "<script>", hat: "corona", extra: "x", flashColor: 5 } });
+  const created = await waitFor(a, "created");
+  const b = await connect();
+  sendMsg(b, { t: "join", code: created.code, name: "Beto" });   // sin look
+  const joined = await waitFor(b, "joined");
+  assert.deepEqual(joined.peers[0].look, { ...DEFAULT_LOOK, hat: "corona" });
+  assert.deepEqual((await waitFor(a, "peer-join")).look, DEFAULT_LOOK);
 });

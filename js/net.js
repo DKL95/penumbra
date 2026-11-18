@@ -1,8 +1,9 @@
 /* =========================================================
    PENUMBRA — Cliente de red (multijugador en tiempo real)
    WebSocket contra server.js. Expone window.Net:
-     Net.create(name, cfg)   crea sala (cfg = { scenario, difficulty }) → "created"
-     Net.join(code)          se une     → evento "joined"
+     Net.create(name, cfg, look)  crea sala (cfg = { scenario, difficulty }) → "created"
+     Net.join(code, name, look)   se une     → evento "joined"
+                             (look = personalización, ver Rules.LOOK)
      Net.start()             el anfitrión comienza la partida → "start" a todos
      Net.sendState(p, r, a)  posición / rotación / animación
      Net.sendEvent(e, d)     eventos sueltos
@@ -10,7 +11,8 @@
      Net.on(tipo, fn)        "created" "joined" "peer-join"
                              "peer-leave" "state" "event"
                              "host" "start" "error" "close" "ping"
-   Salas de hasta 4: 1 monstruo y hasta 3 supervivientes.
+   Salas de 2 a 4. Los roles (1 monstruo y el resto supervivientes)
+   los sortea el servidor al comenzar y llegan en el mensaje "start".
    ========================================================= */
 
 const Net = (() => {
@@ -70,11 +72,13 @@ const Net = (() => {
         info.host = msg.id;
         break;
       case "start":
+        // aquí llegan los roles sorteados por el servidor
         info.started = true;
+        info.role = (msg.players.find((p) => p.id === info.id) || {}).role || null;
         info.peers = msg.players.filter((p) => p.id !== info.id);
         break;
       case "peer-join":
-        info.peers.push({ id: msg.id, role: msg.role, name: msg.name });
+        info.peers.push({ id: msg.id, role: msg.role, name: msg.name, look: msg.look });
         break;
       case "peer-leave":
         info.peers = info.peers.filter((p) => p.id !== msg.id);
@@ -91,13 +95,13 @@ const Net = (() => {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   }
 
-  async function create(name, settings) {
+  async function create(name, settings, look) {
     await connect();
-    raw({ t: "create", name, settings });
+    raw({ t: "create", name, settings, look });
   }
-  async function join(code, name) {
+  async function join(code, name, look) {
     await connect();
-    raw({ t: "join", code, name });
+    raw({ t: "join", code, name, look });
   }
   function start() { raw({ t: "start" }); }
   function leave() {

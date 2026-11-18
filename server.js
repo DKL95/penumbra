@@ -2,9 +2,10 @@
    PENUMBRA — Servidor del juego
    - Sirve los archivos estáticos del juego por HTTP.
    - Multijugador en tiempo real por WebSocket (paquete "ws"):
-     salas de 2 jugadores identificadas por un código de 4
-     letras. El anfitrión es el SUPERVIVIENTE y elige escenario
-     y dificultad; quien se une es el MONSTRUO. El servidor
+     salas de 2 a 4 jugadores identificadas por un código de 4
+     letras. El anfitrión elige escenario y dificultad; al
+     comenzar, el servidor SORTEA los roles: un MONSTRUO al azar
+     y el resto SUPERVIVIENTES (mínimo 2 jugadores). El servidor
      reenvía el estado (posición, rotación y animación) y los
      eventos de la partida (ítems, golpes, fin) al otro jugador.
    - Servicio web: las peticiones /api/* se reenvían al servicio
@@ -22,7 +23,9 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { spawn, spawnSync } = require("child_process");
+const { randomInt } = require("crypto");
 const { WebSocketServer } = require("ws");
+const Rules = require("./js/rules.js");
 
 const PORT = +process.env.PORT || 8777;
 const ROOT = __dirname;
@@ -184,6 +187,7 @@ wss.on("connection", (ws, req) => {
   ws.room = null;
   ws.role = null;
   ws.name = "Jugador " + ws.id;
+  ws.look = Rules.defaultLook();
   log(`conexión ${ws.id} desde ${req.socket.remoteAddress}`);
 
   ws.on("message", (raw) => {
@@ -197,8 +201,9 @@ wss.on("connection", (ws, req) => {
         const settings = roomSettings(msg.settings);
         rooms.set(code, { players: new Map([[ws.id, ws]]), settings, host: ws.id, started: false });
         ws.room = code;
-        ws.role = "survivor";
+        ws.role = null;                 // los roles se sortean al comenzar
         ws.name = String(msg.name || ws.name).slice(0, 16);
+        ws.look = Rules.sanitizeLook(msg.look);   // apariencia personalizada (solo ids válidos)
         send(ws, { t: "created", code, id: ws.id, role: ws.role, settings, host: ws.id });
         log(`[${code}] sala creada por ${ws.id}`);
         break;
@@ -212,33 +217,35 @@ wss.on("connection", (ws, req) => {
         if (room.players.size >= MAX_PLAYERS) return send(ws, { t: "error", msg: "La partida ya está llena." });
         if (ws.room) leaveRoom(ws);
 
-        // un solo monstruo por sala: si aún no hay, lo es quien entra; si ya hay, superviviente
-        const taken = [...room.players.values()].map((p) => p.role);
-        ws.role = taken.includes("monster") ? "survivor" : "monster";
+        ws.role = null;                 // los roles se sortean al comenzar
         ws.room = code;
         ws.name = String(msg.name || ws.name).slice(0, 16);
+        ws.look = Rules.sanitizeLook(msg.look);
         room.players.set(ws.id, ws);
 
         const peers = [...room.players.values()]
           .filter((p) => p.id !== ws.id)
-          .map((p) => ({ id: p.id, role: p.role, name: p.name }));
+          .map((p) => ({ id: p.id, role: p.role, name: p.name, look: p.look }));
         send(ws, { t: "joined", code, id: ws.id, role: ws.role, peers, settings: room.settings, host: room.host });
-        broadcast(room, { t: "peer-join", id: ws.id, role: ws.role, name: ws.name }, ws.id);
-        log(`[${code}] entra ${ws.id} como ${ws.role}`);
+        broadcast(room, { t: "peer-join", id: ws.id, role: ws.role, name: ws.name, look: ws.look }, ws.id);
+        log(`[${code}] entra ${ws.id} · ${room.players.size} en la sala`);
         break;
       }
       case "start": {
-        // solo el anfitrión, con al menos un superviviente y el monstruo
+        // solo el anfitrión y con al menos 2 jugadores (1 monstruo + 1 superviviente)
         const room = rooms.get(ws.room);
         if (!room || room.started) return;
         if (room.host !== ws.id) return send(ws, { t: "error", msg: "Solo el anfitrión puede comenzar." });
-        const roles = [...room.players.values()].map((p) => p.role);
-        if (!roles.includes("monster") || !roles.includes("survivor"))
-          return send(ws, { t: "error", msg: "Hace falta el monstruo y al menos un superviviente." });
+        if (room.players.size < 2)
+          return send(ws, { t: "error", msg: "Hacen falta al menos 2 jugadores: un monstruo y un superviviente." });
+        // sorteo: uno al azar es el monstruo, los demás supervivientes
+        const list = [...room.players.values()];
+        const monster = randomInt(list.length);
+        list.forEach((p, i) => { p.role = i === monster ? "monster" : "survivor"; });
         room.started = true;
-        const players = [...room.players.values()].map((p) => ({ id: p.id, role: p.role, name: p.name }));
+        const players = [...room.players.values()].map((p) => ({ id: p.id, role: p.role, name: p.name, look: p.look }));
         broadcast(room, { t: "start", players });
-        log(`[${ws.room}] comienza con ${players.length} jugadores`);
+        log(`[${ws.room}] comienza con ${players.length} jugadores · monstruo: ${list[monster].id}`);
         break;
       }
       case "state": {

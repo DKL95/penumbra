@@ -101,7 +101,7 @@
   <section class="screen" id="screen-multiplayer" data-title="Multijugador">
     <div class="panel">
       <h2 class="screen-h">Multijugador</h2>
-      <p class="screen-sub">Hasta 3 supervivientes contra 1 monstruo, en tiempo real.</p>
+      <p class="screen-sub">De 2 a 4 jugadores en tiempo real: al comenzar se sortea quién es el monstruo.</p>
 
       <div class="mp-grid">
         <div class="card">
@@ -122,7 +122,7 @@
           </label>
           <div class="code-box" id="mp-code">— — — —</div>
           <button class="btn" data-action="generate-code">Crear sala</button>
-          <p class="micro" id="mp-host-status">Serás <b>superviviente</b>. El primero en unirse es el monstruo; hasta 2 más entran como supervivientes.</p>
+          <p class="micro" id="mp-host-status">Hasta 4 jugadores. Al comenzar se sortea quién es el <b>monstruo</b>; los demás son <b>supervivientes</b>.</p>
         </div>
 
         <div class="card">
@@ -130,7 +130,7 @@
           <p class="muted">Escribe el código de tu anfitrión.</p>
           <input class="field" id="mp-join" type="text" maxlength="4" placeholder="Ej. 4KZ9" autocomplete="off" />
           <button class="btn" data-action="join-game">Unirse</button>
-          <p class="micro" id="mp-join-status">Si la sala aún no tiene monstruo, lo serás tú; si ya lo tiene, entras como <b>superviviente</b>.</p>
+          <p class="micro" id="mp-join-status">Los roles se sortean cuando el anfitrión comienza la partida.</p>
         </div>
       </div>
 
