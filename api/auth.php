@@ -6,7 +6,7 @@
    POST   { provider: "guest", name, guestId? }   → jugador invitado
    GET    (con X-Penumbra-Token)                  → usuario de la sesión
    DELETE (con X-Penumbra-Token)                  → cierra la sesión
-   DELETE ?cuenta=1 (con X-Penumbra-Token)        → borra la cuenta y sus puntajes
+   DELETE ?cuenta=1 (con X-Penumbra-Token)        → borra la cuenta, sus puntajes y su personalización
    Respuesta: { ok, token, user: { id, name, photo, provider } }
    ========================================================= */
 require __DIR__ . '/lib/db.php';
@@ -23,6 +23,7 @@ switch (method()) {
         if (!empty($_GET['cuenta'])) {
             $u = require_user();
             db()->prepare('DELETE FROM puntajes WHERE usuario_id = ?')->execute([$u['id']]);
+            db()->prepare('DELETE FROM personalizacion WHERE usuario_id = ?')->execute([$u['id']]);
             db()->prepare('DELETE FROM sesiones WHERE usuario_id = ?')->execute([$u['id']]);
             db()->prepare('DELETE FROM usuarios WHERE id = ?')->execute([$u['id']]);
             json_out(['ok' => true, 'deleted' => true]);

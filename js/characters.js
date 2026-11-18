@@ -5,16 +5,19 @@
      animaciones Idle / Walking_A / Running_A. Se le ocultan las
      armas y se le pone una linterna en la mano.
      Se carga con GLTFLoader y se anima con AnimationMixer.
-   - Monstruo: figura alta y delgada tipo "Slenderman", toda
-     negra, armada por nosotros con primitivas de Three.js
-     (cilindros, cajas y esferas) en una jerarquía de pivotes
-     (cadera, rodilla, hombro, codo). Su caminata se anima por
-     código con senos según la velocidad.
+   - Monstruo: js/monsters.js. Cuatro tipos a elegir (carnicero,
+     slasher, demonio y llorona), armados con primitivas sobre una
+     jerarquía de pivotes y animados por código.
+   - Personalización (Rules.LOOK, js/look.js): color de la ropa
+     del superviviente, tipo, color y ojos del monstruo y un accesorio
+     en la cabeza hecho con primitivas. Cada personaje la aplica
+     con setLook(look), también en vivo (vista previa).
    ========================================================= */
 
 import * as THREE from "three";
 import { GLTFLoader } from "./lib/addons/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "./lib/addons/utils/SkeletonUtils.js";
+import { MonsterCharacter } from "./monsters.js";
 
 const DEFS = {
   survivor: {
@@ -24,6 +27,8 @@ const DEFS = {
     clips: { idle: "Idle", walk: "Walking_A", run: "Running_A" },
     // el modelo trae armas que el superviviente no usa
     hide: /knife|crossbow|throwable/i,
+    // mallas cuya tela verde cambia de color con la personalización (ver clothTint)
+    tint: /^Rogue_/,
     walkSpeed: 1.7, runSpeed: 4.0,
     clipWalkSpeed: 1.7, clipRunSpeed: 4.4,  // m/s que "recorren" los clips
   },
@@ -62,9 +67,102 @@ function flashlightMesh() {
   return g;
 }
 
+/* ---------------- Accesorios de cabeza (personalización) ----------------
+   Hechos en metros para una cabeza de 0.25 m de ancho. El origen es la
+   coronilla (centro de la parte de arriba de la cabeza), +Y arriba y +Z
+   hacia el frente; la máscara usa como origen el frente de la cara. */
+const HAT_W = 0.25;
+function hatMesh(id) {
+  if (!id || id === "ninguno") return null;
+  const g = new THREE.Group();
+  const add = (geo, mat, x = 0, y = 0, z = 0) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    g.add(m);
+    return m;
+  };
+  if (id === "copa") {
+    const felt = new THREE.MeshStandardMaterial({ color: 0x18171a, roughness: 0.85 });
+    add(new THREE.CylinderGeometry(0.17, 0.17, 0.015, 24), felt, 0, 0.008, 0);           // ala
+    add(new THREE.CylinderGeometry(0.105, 0.112, 0.2, 24), felt, 0, 0.115, 0);           // copa
+    add(new THREE.CylinderGeometry(0.114, 0.114, 0.032, 24),
+      new THREE.MeshStandardMaterial({ color: 0x6b1510, roughness: 0.6 }), 0, 0.034, 0);  // listón
+  } else if (id === "corona") {
+    const gold = new THREE.MeshStandardMaterial({ color: 0xc9a13a, metalness: 0.85, roughness: 0.3, side: THREE.DoubleSide });
+    add(new THREE.CylinderGeometry(0.115, 0.12, 0.06, 24, 1, true), gold, 0, 0.03, 0);   // aro
+    const gem = new THREE.MeshStandardMaterial({ color: 0xb01818, emissive: 0x500808, roughness: 0.2 });
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      add(new THREE.ConeGeometry(0.025, 0.07, 6), gold, Math.sin(a) * 0.115, 0.095, Math.cos(a) * 0.115);
+      add(new THREE.SphereGeometry(0.012, 8, 6), gem, Math.sin(a) * 0.122, 0.03, Math.cos(a) * 0.122);
+    }
+  } else if (id === "cuernos") {
+    const horn = new THREE.MeshStandardMaterial({ color: 0xd9cfb6, roughness: 0.55 });
+    for (const side of [-1, 1]) {
+      // base y punta en dos tramos para que se curven hacia afuera y atrás
+      const base = new THREE.Group();
+      base.position.set(side * 0.075, -0.02, -0.01);
+      base.rotation.set(-0.35, 0, -side * 0.55);
+      g.add(base);
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.032, 0.1, 10).translate(0, 0.05, 0), horn);
+      b.castShadow = true;
+      base.add(b);
+      const tip = new THREE.Group();
+      tip.position.y = 0.095;
+      tip.rotation.set(-0.45, 0, -side * 0.6);
+      base.add(tip);
+      const t = new THREE.Mesh(new THREE.ConeGeometry(0.019, 0.1, 10).translate(0, 0.05, 0), horn);
+      t.castShadow = true;
+      tip.add(t);
+    }
+  } else if (id === "mascara") {
+    // máscara de porcelana con ojos huecos y una grieta
+    const bone = new THREE.MeshStandardMaterial({ color: 0xe9e3d4, roughness: 0.45, side: THREE.DoubleSide });
+    const face = add(new THREE.SphereGeometry(0.1, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.5), bone, 0, 0, -0.03);
+    face.rotation.x = Math.PI / 2;
+    face.scale.set(0.9, 0.5, 1.2);
+    const dark = new THREE.MeshBasicMaterial({ color: 0x050505 });
+    for (const side of [-1, 1]) {
+      const eye = add(new THREE.SphereGeometry(0.018, 10, 8), dark, side * 0.035, 0.02, 0.019);
+      eye.scale.set(1.2, 0.8, 0.5);
+    }
+    add(new THREE.BoxGeometry(0.004, 0.06, 0.004), new THREE.MeshBasicMaterial({ color: 0x5a1010 }), 0.02, -0.04, 0.021)
+      .rotation.z = 0.4;
+  }
+  return g;
+}
+
+/* ---------------- Color de la tela del superviviente ----------------
+   El modelo usa una sola textura (atlas) para tela, piel y cuero.
+   Multiplicar todo por un color oscurecería también la cara, así que
+   un pequeño cambio al shader detecta los texeles verdes (la tela) y
+   los pinta del color elegido conservando sus luces y sombras. */
+function clothTint(material) {
+  const u = { uTint: { value: new THREE.Color(1, 1, 1) }, uTintOn: { value: 0 } };
+  material.userData.tint = u;
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, u);
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform vec3 uTint;\nuniform float uTintOn;")
+      .replace("#include <map_fragment>", `#include <map_fragment>
+        {
+          vec3 c = diffuseColor.rgb;
+          float green = c.g - max(c.r, c.b);                 // cuánto domina el verde
+          float mask = smoothstep(0.015, 0.06, green) * uTintOn;
+          float lum = dot(c, vec3(0.299, 0.587, 0.114));
+          float tl = max(dot(uTint, vec3(0.299, 0.587, 0.114)), 0.04);
+          vec3 dyed = clamp(uTint * (lum / tl) * 1.15, 0.0, 1.0);
+          diffuseColor.rgb = mix(c, dyed, mask);
+        }`);
+  };
+  material.customProgramCacheKey = () => "penumbra-cloth-tint";
+  return u;
+}
+
 /* ---------------- Superviviente (GLTF) ---------------- */
 class GltfCharacter {
-  constructor(kind) {
+  constructor(kind, look) {
     const def = DEFS[kind];
     const gltf = loaded[kind];
     if (!gltf) throw new Error(`Modelo ${kind} no cargado`);
@@ -117,6 +215,16 @@ class GltfCharacter {
 
     if (kind === "survivor") this.addFlashlight();
 
+    // cabeza en reposo (antes de animar): caja y pose del hueso, para colocar accesorios
+    this.headBone = this.bone(/^head$/i);
+    const headMesh = this.model.getObjectByName("Rogue_Head_Hooded");
+    this.headBox = headMesh ? new THREE.Box3().expandByObject(headMesh) : null;
+    if (this.headBone) {
+      const rel = new THREE.Matrix4().copy(this.root.matrixWorld).invert().multiply(this.headBone.matrixWorld);
+      this.headRest = { p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3() };
+      rel.decompose(this.headRest.p, this.headRest.q, this.headRest.s);
+    }
+
     // animaciones (si se deforma el esqueleto, sin las pistas de escala de los clips)
     if (def.boneScale && !gltf.clipsNoScale)
       gltf.clipsNoScale = gltf.animations.map((c) =>
@@ -130,6 +238,45 @@ class GltfCharacter {
     }
     this.current = null;
     this.play("idle", 0);
+    this.setLook(look);
+  }
+
+  // aplica la personalización (se puede llamar otra vez para cambiarla en vivo)
+  setLook(look) {
+    const L = Rules.sanitizeLook(look);
+    if (this.def.tint) {
+      const c = Rules.lookColor(L, "survivorColor");
+      this.model.traverse((o) => {
+        if (!o.isMesh || !this.def.tint.test(o.name)) return;
+        // material propio: los clones de SkeletonUtils comparten el del modelo original
+        if (!o.userData.ownMat) { o.material = o.material.clone(); clothTint(o.material); o.userData.ownMat = true; }
+        const u = o.material.userData.tint;
+        u.uTintOn.value = c == null ? 0 : 1;
+        if (c != null) u.uTint.value.set(c);
+      });
+    }
+    this.setHat(L.hat);
+  }
+
+  setHat(id) {
+    if (this.hat) { this.hat.removeFromParent(); this.hat = null; }
+    const mesh = hatMesh(id);
+    if (!mesh || !this.headBone || !this.headRest || !this.headBox) return;
+    // punto objetivo en el espacio del personaje (metros): coronilla o frente de la cara
+    const b = this.headBox, size = new THREE.Vector3();
+    b.getSize(size);
+    const k = (size.x * 0.82) / HAT_W;          // la capucha es más ancha que la cabeza
+    const target = id === "mascara"
+      ? new THREE.Vector3((b.min.x + b.max.x) / 2, b.min.y + size.y * 0.42, b.max.z - size.z * 0.12)
+      : new THREE.Vector3((b.min.x + b.max.x) / 2, b.max.y - size.y * 0.08, (b.min.z + b.max.z) / 2);
+    // de espacio del personaje a espacio local del hueso (derecho en la pose de reposo)
+    const { p, q, s } = this.headRest;
+    const qi = q.clone().invert();
+    mesh.position.copy(target.sub(p).applyQuaternion(qi)).divide(s);
+    mesh.quaternion.copy(qi);
+    mesh.scale.set(k / s.x, k / s.y, k / s.z);
+    this.headBone.add(mesh);
+    this.hat = mesh;
   }
 
   bone(re) {
@@ -191,122 +338,12 @@ class GltfCharacter {
   dispose() { this.root.removeFromParent(); this.mixer.stopAllAction(); }
 }
 
-/* ---------------- Monstruo: Slenderman de primitivas ---------------- */
-// modelo en metros, pies en y = 0, mirando hacia +Z (igual que los GLTF)
-let slenderMat = null;
-class SlenderCharacter {
-  constructor() {
-    this.kind = "monster";
-    this.def = DEFS.monster;
-    this.time = 0;
-    this.phase = 0;   // fase del ciclo de pasos
-    this.amp = 0;     // amplitud actual del balanceo (0 quieto, 1 corriendo)
-    this.speed = 0;
+/* ---------------- Monstruo: ver js/monsters.js ----------------
+   modelo en metros, pies en y = 0, mirando hacia +Z (igual que los GLTF) */
 
-    slenderMat ||= new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.75, metalness: 0.0 });
-    const mat = slenderMat;
-    const mesh = (geo, parent, x = 0, y = 0, z = 0) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(x, y, z);
-      m.castShadow = true;
-      parent.add(m);
-      return m;
-    };
-    const pivot = (parent, x, y, z) => {
-      const g = new THREE.Group();
-      g.position.set(x, y, z);
-      parent.add(g);
-      return g;
-    };
-    // segmento que cuelga hacia abajo desde su pivote
-    const limb = (parent, len, r0, r1) =>
-      mesh(new THREE.CylinderGeometry(r0, r1, len, 8).translate(0, -len / 2, 0), parent);
-
-    this.root = new THREE.Group();
-
-    // piernas: cadera -> rodilla (muslo y espinilla larguísimos)
-    const HIP = 1.25, LEG = 0.62;
-    this.legs = [-1, 1].map((side) => {
-      const hip = pivot(this.root, side * 0.1, HIP, 0);
-      limb(hip, LEG, 0.055, 0.045);
-      const knee = pivot(hip, 0, -LEG, 0);
-      limb(knee, LEG, 0.045, 0.035);
-      mesh(new THREE.BoxGeometry(0.08, 0.05, 0.24), knee, 0, -LEG + 0.02, 0.06); // zapato
-      return { hip, knee };
-    });
-
-    // parte de arriba (sube y baja al caminar): torso, cuello y cabeza
-    this.upper = pivot(this.root, 0, HIP, 0);
-    const torso = mesh(new THREE.CylinderGeometry(0.2, 0.13, 0.78, 10), this.upper, 0, 0.39, 0);
-    torso.scale.z = 0.55;
-    mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.16, 8), this.upper, 0, 0.84, 0);
-    this.head = pivot(this.upper, 0, 0.9, 0);
-    const skull = mesh(new THREE.SphereGeometry(0.12, 16, 12), this.head, 0, 0.13, 0.01);
-    skull.scale.set(0.85, 1.25, 0.95);   // cabeza alargada y sin cara
-
-    // brazos: hombro -> codo, muy largos, con dedos finos
-    const ARM = 0.56;
-    this.arms = [-1, 1].map((side) => {
-      const shoulder = pivot(this.upper, side * 0.23, 0.74, 0);
-      shoulder.rotation.z = side * 0.06;
-      limb(shoulder, ARM, 0.035, 0.03);
-      const elbow = pivot(shoulder, 0, -ARM, 0);
-      limb(elbow, ARM, 0.03, 0.022);
-      const hand = pivot(elbow, 0, -ARM, 0);
-      mesh(new THREE.BoxGeometry(0.03, 0.08, 0.06), hand, 0, -0.04, 0);
-      for (let i = 0; i < 4; i++) {
-        const f = mesh(new THREE.CylinderGeometry(0.006, 0.004, 0.17, 5).translate(0, -0.085, 0),
-          hand, 0, -0.07, -0.024 + i * 0.016);
-        f.rotation.x = (i - 1.5) * 0.08;
-        f.rotation.z = side * 0.12;
-      }
-      return { shoulder, elbow };
-    });
-  }
-
-  setMotion(speed) { this.speed = speed; }
-
-  update(dt) {
-    this.time += dt;
-    const t = this.time;
-    // la amplitud sigue a la velocidad con suavizado: sin saltos al arrancar o frenar
-    const target = THREE.MathUtils.clamp(this.speed / this.def.runSpeed, 0, 1);
-    this.amp += (target - this.amp) * Math.min(1, dt * 6);
-    // un ciclo completo (dos pasos) cada ~1.9 m: piernas largas
-    this.phase += dt * this.speed * (Math.PI * 2 / 1.9);
-
-    const a = this.amp, s = Math.sin(this.phase), c = Math.cos(this.phase);
-    const legSwing = 0.25 + a * 0.45, armSwing = 0.15 + a * 0.55;
-    const moving = Math.min(1, this.speed / 0.4);
-
-    // piernas: rotación negativa en X = hacia adelante; la rodilla se dobla al adelantar la pierna
-    this.legs.forEach(({ hip, knee }, i) => {
-      const k = i === 0 ? 1 : -1;
-      hip.rotation.x = -s * k * legSwing * moving;
-      knee.rotation.x = Math.max(0, c * k) * (0.5 + a * 0.6) * moving;
-    });
-    // brazos opuestos a las piernas, codos un poco doblados
-    this.arms.forEach(({ shoulder, elbow }, i) => {
-      const k = i === 0 ? -1 : 1;
-      shoulder.rotation.x = -s * k * armSwing * moving + Math.sin(t * 0.8 + i) * 0.03;
-      elbow.rotation.x = -0.12 - a * 0.5;
-    });
-
-    // rebote al pisar y algo encorvado al correr
-    this.upper.position.y = 1.25 - Math.abs(c) * 0.035 * moving;
-    this.upper.rotation.x = 0.04 + a * 0.18;
-    // quieto: respira y ladea la cabeza despacio (inquietante)
-    const idle = 1 - moving;
-    this.upper.scale.y = 1 + Math.sin(t * 1.3) * 0.006;
-    this.head.rotation.z = Math.sin(t * 0.35) * 0.32 * idle + Math.sin(t * 0.9) * 0.03;
-    this.head.rotation.x = 0.08 - a * 0.1;
-  }
-
-  dispose() { this.root.removeFromParent(); }
-}
-
-export function createCharacter(kind) {
-  return DEFS[kind].procedural ? new SlenderCharacter() : new GltfCharacter(kind);
+// look: personalización del jugador dueño del personaje (Rules.LOOK)
+export function createCharacter(kind, look) {
+  return DEFS[kind].procedural ? new MonsterCharacter(look, hatMesh) : new GltfCharacter(kind, look);
 }
 
 export const CharacterDefs = DEFS;

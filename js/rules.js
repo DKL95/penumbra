@@ -136,9 +136,101 @@
     return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
   }
 
+  /* ---------------- Personalización ---------------- */
+  // Opciones cerradas: el navegador, server.js y api/lib/rules.php solo
+  // aceptan estos ids (la primera opción de cada grupo es la de fábrica).
+  // color: null = sin cambio (textura original / sin ojos / sin accesorio).
+  const LOOK = {
+    survivorColor: {
+      label: "Ropa del superviviente",
+      options: {
+        original: { label: "Original", color: null },
+        carmesi:  { label: "Carmesí",  color: 0xa83228 },
+        bosque:   { label: "Bosque",   color: 0x4f8a45 },
+        noche:    { label: "Noche",    color: 0x3f5a9e },
+        ceniza:   { label: "Ceniza",   color: 0xb4b2ab },
+        mostaza:  { label: "Mostaza",  color: 0xc9a034 },
+        violeta:  { label: "Violeta",  color: 0x7b4a99 },
+      },
+    },
+    flashColor: {
+      label: "Luz de la linterna",
+      options: {
+        calida:  { label: "Cálida", color: 0xfff1d6 },
+        blanca:  { label: "Blanca", color: 0xf4f8ff },
+        azul:    { label: "Azul",   color: 0xa9c8ff },
+        roja:    { label: "Roja",   color: 0xff8f80 },
+        verde:   { label: "Verde",  color: 0xc4ffb4 },
+      },
+    },
+    monsterType: {
+      label: "Tipo de monstruo",
+      options: {
+        carnicero: { label: "El Carnicero" },
+        slasher:   { label: "Slasher" },
+        demonio:   { label: "Demonio" },
+        llorona:   { label: "La Llorona" },
+      },
+    },
+    monsterSkin: {
+      label: "Color del monstruo",
+      options: {
+        original: { label: "Original", color: null },   // el de fábrica de cada tipo (js/monsters.js)
+        sombra: { label: "Sombra", color: 0x050505 },
+        ceniza: { label: "Ceniza", color: 0x4a4a48 },
+        hueso:  { label: "Hueso",  color: 0xcfc6b0 },
+        palido: { label: "Pálido", color: 0x8e9ba0 },
+        sangre: { label: "Sangre", color: 0x4a0b07 },
+      },
+    },
+    monsterEyes: {
+      label: "Ojos del monstruo",
+      options: {
+        ninguno: { label: "Sin cara", color: null },
+        rojo:    { label: "Rojos",    color: 0xff2a1a },
+        ambar:   { label: "Ámbar",    color: 0xffb02a },
+        blanco:  { label: "Blancos",  color: 0xeaf4ff },
+        verde:   { label: "Verdes",   color: 0x5aff6a },
+      },
+    },
+    hat: {
+      label: "Accesorio en la cabeza",
+      options: {
+        ninguno:  { label: "Ninguno" },
+        copa:     { label: "Sombrero de copa" },
+        corona:   { label: "Corona" },
+        cuernos:  { label: "Cuernos" },
+        mascara:  { label: "Máscara" },
+      },
+    },
+  };
+  const LOOK_KEYS = Object.keys(LOOK);
+
+  function defaultLook() {
+    const out = {};
+    for (const k of LOOK_KEYS) out[k] = Object.keys(LOOK[k].options)[0];
+    return out;
+  }
+  // deja solo claves e ids conocidos; lo demás vuelve al valor de fábrica
+  function sanitizeLook(look) {
+    const out = defaultLook();
+    if (look && typeof look === "object") {
+      for (const k of LOOK_KEYS) {
+        const v = look[k];
+        if (typeof v === "string" && Object.prototype.hasOwnProperty.call(LOOK[k].options, v)) out[k] = v;
+      }
+    }
+    return out;
+  }
+  function lookColor(look, key) {
+    const l = sanitizeLook(look);
+    return LOOK[key].options[l[key]].color ?? null;
+  }
+
   return {
     DIFFICULTY, difficulty, ITEMS, INVENTORY, BATTERY_CHARGE, STUN_TIME, STUN_RADIUS,
     INVULNERABLE, ATTACK_RANGE, ATTACK_COOLDOWN, itemsFor, emptyInventory, addItem,
     SCENARIOS, CAMPAIGN, RELICS_PER_LEVEL, MODES, score, formatTime,
+    LOOK, LOOK_KEYS, defaultLook, sanitizeLook, lookColor,
   };
 });

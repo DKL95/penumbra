@@ -2094,8 +2094,12 @@ const Scene3D = (() => {
     el.classList.add("hit");
   }
 
-  function makeFlashlight(parent, withShadow) {
-    const spot = new THREE.SpotLight(0xfff1d6, 9, 12, 0.42, 0.45, 1.6);
+  // personalización (js/look.js): la tuya y el color de linterna de un `look`
+  const myLook = () => (window.Look ? Look.get() : Rules.defaultLook());
+  const flashHex = (look) => Rules.lookColor(look, "flashColor") ?? 0xfff1d6;
+
+  function makeFlashlight(parent, withShadow, color = 0xfff1d6) {
+    const spot = new THREE.SpotLight(color, 9, 12, 0.42, 0.45, 1.6);
     spot.position.set(0.18, 1.35, 0.25);
     spot.target.position.set(0.1, 0.9, 4);
     spot.castShadow = withShadow;
@@ -2105,8 +2109,8 @@ const Scene3D = (() => {
     return spot;
   }
 
-  function spawnCharacter(role) {
-    const ch = createCharacter(role);
+  function spawnCharacter(role, look) {
+    const ch = createCharacter(role, look);
     scene.add(ch.root);
     return ch;
   }
@@ -2170,7 +2174,7 @@ const Scene3D = (() => {
   function setupMatch() {
     clearMatch();
     player.role = config.role;
-    player.char = spawnCharacter(player.role);
+    player.char = spawnCharacter(player.role, myLook());
     const sp = LV.spawn[player.role];
     player.pos.copy(sp.pos).add(spawnOffset(player.role, window.Net ? Net.info.id : 0));
     player.heading = sp.heading;
@@ -2183,7 +2187,7 @@ const Scene3D = (() => {
 
     if (player.role === "survivor") {
       const q = window.Settings ? Settings.get().quality : "medium";
-      flashlight = makeFlashlight(player.char.root, q !== "low");
+      flashlight = makeFlashlight(player.char.root, q !== "low", flashHex(myLook()));
     }
 
     if (config.mode === "solo") {
@@ -2208,7 +2212,7 @@ const Scene3D = (() => {
   // otro jugador de la sala
   function addPeer(p) {
     if (peers.has(p.id)) peers.get(p.id).char.dispose();
-    const ch = spawnCharacter(p.role);
+    const ch = spawnCharacter(p.role, p.look);   // con la apariencia que eligió ese jugador
     const s = LV.spawn[p.role];
     const pos = s.pos.clone().add(spawnOffset(p.role, p.id));
     const a = {
@@ -2217,7 +2221,7 @@ const Scene3D = (() => {
       speed: 0, flash: null, stepAcc: 0, hp: G.diff.hp, maxHp: G.diff.hp, out: null,
     };
     if (p.role === "survivor") {
-      a.flash = makeFlashlight(ch.root, false);
+      a.flash = makeFlashlight(ch.root, false, flashHex(p.look));
       // los supervivientes ven el nombre de sus compañeros (el monstruo no)
       if (player.role === "survivor") ch.root.add(nameTag(a.name));
     }
@@ -2254,7 +2258,8 @@ const Scene3D = (() => {
 
   function addOther(role, npc) {
     if (other) other.char.dispose();
-    const ch = spawnCharacter(role);
+    // en un jugador, el monstruo de la IA usa la apariencia de monstruo que elegiste
+    const ch = spawnCharacter(role, myLook());
     const s = LV.spawn[role];
     other = {
       role, npc, char: ch,
@@ -2908,7 +2913,7 @@ const Scene3D = (() => {
     const stride = player.speed > 3 ? 0.9 : 0.62;
     if (player.speed > 0.4 && player.stepAcc > stride) {
       player.stepAcc = 0;
-      Sound.step(monster ? "heavy" : LV.surface, player.speed > 3 ? 0.9 : 0.55);
+      if (!player.char.silentSteps) Sound.step(monster ? "heavy" : LV.surface, player.speed > 3 ? 0.9 : 0.55);
     }
 
     // linterna y batería
@@ -2950,7 +2955,7 @@ const Scene3D = (() => {
     if (a.speed > 0.4 && a.stepAcc > (a.speed > 3 ? 0.9 : 0.7)) {
       a.stepAcc = 0;
       const v = clamp(1 - a.pos.distanceTo(player.pos) / 12, 0, 1);
-      if (v > 0.05) Sound.step(a.role === "monster" ? "heavy" : LV.surface, v * 0.8);
+      if (v > 0.05 && !a.char.silentSteps) Sound.step(a.role === "monster" ? "heavy" : LV.surface, v * 0.8);
     }
   }
 

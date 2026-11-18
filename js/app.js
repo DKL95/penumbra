@@ -61,6 +61,8 @@
       if (id === "screen-menu") Sound.startAmbient();
     }
 
+    if (id === "screen-customize") window.Customize?.open();
+    else window.Customize?.close();
     if (id === "screen-scores") { renderAccount(); loadScores(); }
     if (id === "screen-settings") fillSettingsForm();
     if (id === "screen-play") fillPlayScreen();
@@ -226,7 +228,7 @@
     Sound.confirm();
     setStatus(hostStatus, "Conectando con el servidor…");
     try {
-      await Net.create(playerName(), { scenario: $("mp-scenario").value, difficulty: $("mp-difficulty").value });
+      await Net.create(playerName(), { scenario: $("mp-scenario").value, difficulty: $("mp-difficulty").value }, Look.get());
     } catch (err) {
       Sound.error();
       setStatus(hostStatus, err.message, "err");
@@ -243,7 +245,7 @@
     Sound.confirm();
     setStatus(joinStatus, `Conectando a la partida <b>${val}</b>…`);
     try {
-      await Net.join(val, playerName());
+      await Net.join(val, playerName(), Look.get());
     } catch (err) {
       Sound.error();
       setStatus(joinStatus, err.message, "err");
@@ -573,7 +575,7 @@
       syncPicks();
       return;
     }
-    const tab = e.target.closest(".tab");
+    const tab = e.target.closest("#scores-tabs .tab");
     if (tab) {
       Sound.click();
       scoreFilter.mode = tab.dataset.mode;
@@ -612,6 +614,7 @@
       case "result-menu": Sound.click(); exitToMenu(); break;
       case "save-settings": saveSettings(); break;
       case "reset-settings": resetSettings(); break;
+      case "reset-look": Sound.back(); Look.reset(); break;
       case "quit": askQuit(); break;
       case "cancel-quit": Sound.click(); quitOverlay.hidden = true; break;
       case "confirm-quit": confirmQuit(); break;

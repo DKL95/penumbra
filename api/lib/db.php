@@ -129,6 +129,9 @@ function migrate(PDO $pdo): void
             modo TEXT NOT NULL, escenario TEXT NOT NULL, dificultad TEXT NOT NULL, rol TEXT NOT NULL DEFAULT 'survivor',
             resultado TEXT NOT NULL, puntos INTEGER NOT NULL, segundos INTEGER NOT NULL, reliquias INTEGER NOT NULL DEFAULT 0,
             creado DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS personalizacion (
+            usuario_id INTEGER PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
+            datos TEXT NOT NULL, actualizado DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)");
         return;
     }
     $sql = preg_replace('/^\s*--.*$/m', '', file_get_contents(__DIR__ . '/../sql/schema.sql'));

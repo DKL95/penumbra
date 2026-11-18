@@ -41,3 +41,12 @@ CREATE TABLE IF NOT EXISTS puntajes (
   INDEX idx_puntos (modo, puntos),
   CONSTRAINT fk_puntaje_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Personalización del jugador (colores, linterna y accesorio). Una fila por usuario;
+-- `datos` es un JSON con ids de las opciones de Rules.LOOK (js/rules.js), validados en PHP.
+CREATE TABLE IF NOT EXISTS personalizacion (
+  usuario_id   INT          PRIMARY KEY,
+  datos        VARCHAR(400) NOT NULL,
+  actualizado  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_personalizacion_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

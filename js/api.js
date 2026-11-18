@@ -7,6 +7,7 @@
      Api.logout()
      Api.submit(stats)          guarda el puntaje de una partida
      Api.list({ mode, difficulty, limit })
+     Api.getLook() / saveLook(look)   personalización de la cuenta
    Almacenamiento LOCAL (LocalStorage): la sesión, el id de
    invitado y un respaldo de puntajes para cuando no hay
    servidor. Almacenamiento REMOTO: MySQL vía PHP.
@@ -174,8 +175,20 @@ const Api = (() => {
     }
   }
 
+  /* ---------------- Personalización (api/look.php) ---------------- */
+  // null si la cuenta todavía no tiene una guardada
+  async function getLook() {
+    const d = await call("look.php", { auth: true });
+    return d.look;
+  }
+  async function saveLook(look) {
+    const d = await call("look.php", { method: "POST", body: { look }, auth: true });
+    return d.look;
+  }
+
   return {
     info, loginGuest, loginFacebook, loadFacebook, logout, deleteAccount, refresh, submit, list, onChange,
+    getLook, saveLook,
     get user() { return session ? session.user : null; },
   };
 })();

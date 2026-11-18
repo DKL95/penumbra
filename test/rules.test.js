@@ -75,3 +75,15 @@ test("formatTime", () => {
   assert.equal(Rules.formatTime(75.9), "01:15");
   assert.equal(Rules.formatTime(3600), "60:00");
 });
+
+test("personalización: valores de fábrica y limpieza de datos inválidos", () => {
+  const def = Rules.defaultLook();
+  assert.deepEqual(Object.keys(def), Rules.LOOK_KEYS);
+  for (const k of Rules.LOOK_KEYS) assert.equal(def[k], Object.keys(Rules.LOOK[k].options)[0]);
+  assert.deepEqual(Rules.sanitizeLook(null), def);
+  assert.deepEqual(Rules.sanitizeLook("x"), def);
+  const clean = Rules.sanitizeLook({ hat: "corona", survivorColor: "nope", monsterEyes: "toString", extra: 1 });
+  assert.deepEqual(clean, { ...def, hat: "corona" });
+  assert.equal(Rules.lookColor({ flashColor: "roja" }, "flashColor"), Rules.LOOK.flashColor.options.roja.color);
+  assert.equal(Rules.lookColor({}, "monsterEyes"), null);          // de fábrica: sin ojos
+});

@@ -184,3 +184,51 @@ test("auth.php DELETE ?cuenta=1 borra la cuenta y sus puntajes", { skip }, async
   assert.ok(!(await api("scores.php?mode=survival&limit=50")).data.scores.some((x) => x.name === "Borrable"));
   assert.equal((await api("auth.php", { token: s.token })).status, 401);
 });
+
+/* ---------------- personalización (api/look.php) ---------------- */
+test("look.php: requiere sesión, guarda en la cuenta y se recupera", { skip }, async () => {
+  assert.equal((await api("look.php")).status, 401);
+  assert.equal((await api("look.php", { method: "POST", body: { look: {} } })).status, 401);
+  const { data: s } = await api("auth.php", { method: "POST", body: { provider: "guest", name: "Modista" } });
+  const empty = await api("look.php", { token: s.token });
+  assert.equal(empty.status, 200);
+  assert.equal(empty.data.look, null);                            // todavía no guarda nada
+  const look = { survivorColor: "violeta", flashColor: "verde", monsterType: "slasher", monsterSkin: "palido", monsterEyes: "ambar", hat: "mascara" };
+  const saved = await api("look.php", { method: "POST", token: s.token, body: { look } });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.data.look, look);
+  assert.deepEqual((await api("look.php", { token: s.token })).data.look, look);
+  // otra sesión del mismo jugador (mismo guestId) ve la misma personalización
+  const { data: s2 } = await api("auth.php", { method: "POST", body: { provider: "guest", name: "Modista", guestId: s.guestId } });
+  assert.deepEqual((await api("look.php", { token: s2.token })).data.look, look);
+  // actualizar cambia la fila existente
+  const upd = await api("look.php", { method: "POST", token: s.token, body: { look: { ...look, hat: "copa" } } });
+  assert.equal(upd.data.look.hat, "copa");
+  assert.equal((await api("look.php", { token: s.token })).data.look.hat, "copa");
+});
+
+test("look.php: ids inválidos vuelven al de fábrica y falta de datos da 400", { skip }, async () => {
+  const { data: s } = await api("auth.php", { method: "POST", body: { provider: "guest", name: "Tramposo" } });
+  assert.equal((await api("look.php", { method: "POST", token: s.token, body: {} })).status, 400);
+  const r = await api("look.php", { method: "POST", token: s.token, body: { look: { hat: "corona", survivorColor: "' OR 1=1 --", monsterSkin: 7 } } });
+  assert.deepEqual(r.data.look, { ...Rules.defaultLook(), hat: "corona" });
+});
+
+test("las opciones de personalización de PHP coinciden con js/rules.js", { skip }, async () => {
+  const { data: s } = await api("auth.php", { method: "POST", body: { provider: "guest", name: "Catálogo" } });
+  for (const key of Rules.LOOK_KEYS) {
+    for (const id of Object.keys(Rules.LOOK[key].options)) {
+      const r = await api("look.php", { method: "POST", token: s.token, body: { look: { [key]: id } } });
+      assert.equal(r.data.look[key], id, `PHP no acepta ${key}=${id}`);
+    }
+  }
+});
+
+test("borrar la cuenta borra también su personalización", { skip }, async () => {
+  const { data: s } = await api("auth.php", { method: "POST", body: { provider: "guest", name: "Efímero" } });
+  await api("look.php", { method: "POST", token: s.token, body: { look: { hat: "cuernos" } } });
+  assert.equal((await api("auth.php?cuenta=1", { method: "DELETE", token: s.token })).status, 200);
+  // mismo guestId = cuenta nueva y sin personalización
+  const { data: s2 } = await api("auth.php", { method: "POST", body: { provider: "guest", name: "Efímero", guestId: s.guestId } });
+  assert.equal((await api("look.php", { token: s2.token })).data.look, null);
+});
